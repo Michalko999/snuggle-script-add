@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { CATEGORIES, categorizeText, scanList, type Category } from "@/lib/scan.functions";
 
 export const Route = createFileRoute("/")({
@@ -35,6 +35,48 @@ const CATEGORY_STYLES: Record<Category, { dot: string; chip: string }> = {
 };
 
 const STORAGE_KEY = "todos-v2";
+const PREFS_KEY = "category-prefs-v1";
+
+// ——— Preferences (text -> category) ————————————————————————————
+
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function loadPrefs(): Record<string, Category> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, Category> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "string" && (CATEGORIES as readonly string[]).includes(v)) {
+        out[k] = v as Category;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function savePrefs(prefs: Record<string, Category>) {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* ignore */
+  }
+}
+
+// ——— Todos persistence ———————————————————————————————————————
 
 function loadTodos(): Todo[] {
   if (typeof window === "undefined") return [];
@@ -54,12 +96,20 @@ function loadTodos(): Todo[] {
   }
 }
 
+interface UndoState {
+  message: string;
+  entries: Array<{ todo: Todo; index: number }>;
+}
+
 function TodoApp() {
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [prefs, setPrefs] = useState<Record<string, Category>>({});
   const [hydrated, setHydrated] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [undoState, setUndoState] = useState<UndoState | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +119,7 @@ function TodoApp() {
 
   useEffect(() => {
     setTodos(loadTodos());
+    setPrefs(loadPrefs());
     setHydrated(true);
   }, []);
 
@@ -76,12 +127,49 @@ function TodoApp() {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, hydrated]);
 
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    };
+  }, []);
+
+  const triggerUndo = useCallback((state: UndoState) => {
+    setUndoState(state);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndoState(null), 6000);
+  }, []);
+
+  const performUndo = () => {
+    if (!undoState) return;
+    setTodos((prev) => {
+      const next = [...prev];
+      // Insert in ascending index order so positions stay correct
+      const sorted = [...undoState.entries].sort((a, b) => a.index - b.index);
+      for (const { todo, index } of sorted) {
+        next.splice(Math.min(index, next.length), 0, todo);
+      }
+      return next;
+    });
+    setUndoState(null);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+  };
+
+  const applyPref = useCallback(
+    (text: string, fallback: Category): Category => {
+      const key = normalizeText(text);
+      return prefs[key] ?? fallback;
+    },
+    [prefs],
+  );
+
   const addOne = async () => {
     const text = inputValue.trim();
     if (!text) return;
     setInputValue("");
     const id = crypto.randomUUID();
-    setTodos((prev) => [{ id, text, completed: false, category: "Iné" }, ...prev]);
+    const pref = prefs[normalizeText(text)];
+    setTodos((prev) => [{ id, text, completed: false, category: pref ?? "Iné" }, ...prev]);
+    if (pref) return;
     try {
       const { category } = await categorize({ data: { text } });
       setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, category } : t)));
@@ -92,7 +180,7 @@ function TodoApp() {
 
   const addMany = (items: Array<{ text: string; category: Category }>) => {
     const cleaned = items
-      .map((i) => ({ text: i.text.trim(), category: i.category }))
+      .map((i) => ({ text: i.text.trim(), category: applyPref(i.text, i.category) }))
       .filter((i) => i.text.length > 0)
       .map((i) => ({ id: crypto.randomUUID(), text: i.text, completed: false, category: i.category }));
     setTodos((prev) => [...cleaned, ...prev]);
@@ -101,11 +189,36 @@ function TodoApp() {
   const toggleTodo = (id: string) =>
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
 
-  const deleteTodo = (id: string) =>
-    setTodos((prev) => prev.filter((t) => t.id !== id));
+  const setCategory = (id: string, category: Category) => {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, category } : t)));
+    const todo = todos.find((t) => t.id === id);
+    if (!todo) return;
+    const key = normalizeText(todo.text);
+    if (!key) return;
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: category };
+      savePrefs(next);
+      return next;
+    });
+  };
 
-  const clearCompleted = () =>
+  const deleteTodo = (id: string) => {
+    const index = todos.findIndex((t) => t.id === id);
+    if (index === -1) return;
+    const todo = todos[index];
+    setTodos((prev) => prev.filter((t) => t.id !== id));
+    triggerUndo({ message: `Vymazané: ${todo.text}`, entries: [{ todo, index }] });
+  };
+
+  const clearCompleted = () => {
+    const entries: Array<{ todo: Todo; index: number }> = [];
+    todos.forEach((t, i) => {
+      if (t.completed) entries.push({ todo: t, index: i });
+    });
+    if (!entries.length) return;
     setTodos((prev) => prev.filter((t) => !t.completed));
+    triggerUndo({ message: `Vymazaných ${entries.length} hotových`, entries });
+  };
 
   const handleImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -130,7 +243,6 @@ function TodoApp() {
     }
   };
 
-  // Group: aktívne podľa kategórií + hotové na koniec
   const grouped = useMemo(() => {
     const active = todos.filter((t) => !t.completed);
     const done = todos.filter((t) => t.completed);
@@ -251,7 +363,13 @@ function TodoApp() {
                     </div>
                     <div className="space-y-2">
                       {items.map((todo) => (
-                        <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} />
+                        <TodoRow
+                          key={todo.id}
+                          todo={todo}
+                          onToggle={toggleTodo}
+                          onDelete={deleteTodo}
+                          onChangeCategory={setCategory}
+                        />
                       ))}
                     </div>
                   </section>
@@ -269,7 +387,13 @@ function TodoApp() {
                   </div>
                   <div className="space-y-2">
                     {grouped.done.map((todo) => (
-                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} />
+                      <TodoRow
+                        key={todo.id}
+                        todo={todo}
+                        onToggle={toggleTodo}
+                        onDelete={deleteTodo}
+                        onChangeCategory={setCategory}
+                      />
                     ))}
                   </div>
                 </section>
@@ -278,6 +402,30 @@ function TodoApp() {
           )}
         </div>
       </div>
+
+      {/* Undo snackbar */}
+      {undoState && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-30 w-[min(92vw,28rem)]">
+          <div className="flex items-center gap-3 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-lg border border-slate-800">
+            <span className="flex-1 text-sm truncate">{undoState.message}</span>
+            <button
+              onClick={performUndo}
+              className="text-indigo-300 hover:text-indigo-200 font-semibold text-sm px-2 py-1 -mr-1"
+            >
+              Vrátiť
+            </button>
+            <button
+              onClick={() => setUndoState(null)}
+              aria-label="Zavrieť"
+              className="text-slate-400 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -311,10 +459,12 @@ function TodoRow({
   todo,
   onToggle,
   onDelete,
+  onChangeCategory,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
+  onChangeCategory: (id: string, category: Category) => void;
 }) {
   const style = CATEGORY_STYLES[todo.category];
   return (
@@ -349,17 +499,35 @@ function TodoRow({
         {todo.text}
       </span>
 
-      <span
-        className={`hidden sm:inline-flex text-[10px] font-medium px-2 py-0.5 rounded-full border ${style.chip} ${
+      {/* Category chip with native select for category change */}
+      <label
+        className={`relative inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full border cursor-pointer ${style.chip} ${
           todo.completed ? "opacity-60" : ""
         }`}
+        title="Zmeniť kategóriu"
       >
-        {todo.category}
-      </span>
+        <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+        <span className="hidden sm:inline">{todo.category}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 opacity-60">
+          <path fillRule="evenodd" d="M12 15.5 5.5 9h13L12 15.5Z" clipRule="evenodd" />
+        </svg>
+        <select
+          value={todo.category}
+          onChange={(e) => onChangeCategory(todo.id, e.target.value as Category)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          aria-label="Zmeniť kategóriu"
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <button
         onClick={() => onDelete(todo.id)}
-        className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+        className="text-slate-300 hover:text-rose-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
         aria-label="Vymazať"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">

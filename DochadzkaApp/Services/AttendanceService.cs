@@ -22,6 +22,16 @@ namespace Dochadzka.Services
             return db.Employees.Where(e => e.IsActive).OrderBy(e => e.LastName).ToList();
         }
 
+        public List<Employee> GetEmployeesForMonth(int year, int month)
+        {
+            using var db = new AttendanceContext();
+            return db.Employees
+                .Where(e => e.IsActive || e.AttendanceRecords.Any(a => a.Date.Year == year && a.Date.Month == month))
+                .OrderBy(e => e.LastName)
+                .ThenBy(e => e.FirstName)
+                .ToList();
+        }
+
         public void AddEmployee(string firstName, string lastName, string position)
         {
             using var db = new AttendanceContext();
@@ -122,7 +132,7 @@ namespace Dochadzka.Services
         {
             var records = GetMonthlyRecords(employeeId, year, month);
             double prac = records.Where(r => r.DayType == "P").Sum(r => r.Hours);
-            double dov = records.Count(r => r.DayType == "D" || r.DayType == "0.5D");
+            double dov = records.Sum(r => r.DayType == "D" ? 1.0 : r.DayType == "0.5D" ? 0.5 : 0.0);
             double pn = records.Count(r => r.DayType == "PN");
             double ocr = records.Count(r => r.DayType == "O");
             double lek = records.Count(r => r.DayType == "L");

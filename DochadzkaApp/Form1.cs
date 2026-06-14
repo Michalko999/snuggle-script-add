@@ -72,7 +72,7 @@ namespace Dochadzka
             this.Controls.Add(tabMain);
 
             BuildDochadzkaTab();
-            BuildZamestnancipTab();
+            BuildZamestnanciTab();
         }
 
         private void BuildDochadzkaTab()
@@ -144,7 +144,7 @@ namespace Dochadzka
             cmbDayType.Location = new Point(75, 22);
             cmbDayType.Width = 130;
             cmbDayType.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbDayType.Items.AddRange(new object[] { "P – Pracovný deň", "D – Dovolenka", "PN – Práceneschopnosť", "O – OČR", "L – Lekár", "I – Iné" });
+            cmbDayType.Items.AddRange(new object[] { "P – Pracovný deň", "D – Dovolenka", "0.5D – Pol dňa dovolenky", "PN – Práceneschopnosť", "O – OČR", "L – Lekár", "I – Iné" });
             cmbDayType.SelectedIndex = 0;
 
             var lblHours = new Label { Text = "Hodiny:", Location = new Point(220, 25), AutoSize = true };
@@ -183,7 +183,7 @@ namespace Dochadzka
             tabDochadzka.Controls.Add(pnlBottom);
         }
 
-        private void BuildZamestnancipTab()
+        private void BuildZamestnanciTab()
         {
             tabZamestnanci.Padding = new Padding(10);
 
@@ -260,14 +260,14 @@ namespace Dochadzka
             var records = _service.GetMonthlyRecords(emp.Id, _currentYear, _currentMonth);
             int daysInMonth = DateTime.DaysInMonth(_currentYear, _currentMonth);
 
-            var rows = new List<dynamic>();
+            var rows = new List<DayRow>();
             for (int d = 1; d <= daysInMonth; d++)
             {
                 var dt = new DateTime(_currentYear, _currentMonth, d);
                 var rec = records.FirstOrDefault(r => r.Date.Day == d);
                 bool isWeekend = dt.DayOfWeek == DayOfWeek.Saturday || dt.DayOfWeek == DayOfWeek.Sunday;
 
-                rows.Add(new
+                rows.Add(new DayRow
                 {
                     Deň = d,
                     DenTyzdna = dt.ToString("ddd"),
@@ -288,7 +288,7 @@ namespace Dochadzka
 
                 string typ = dgvDochadzka.Rows[i].Cells["Typ"].Value?.ToString() ?? "";
                 if (typ == "P") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(209, 250, 229);
-                else if (typ == "D") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(254, 243, 199);
+                else if (typ == "D" || typ == "0.5D") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(254, 243, 199);
                 else if (typ == "PN") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(254, 226, 226);
                 else if (typ == "O") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(237, 233, 254);
                 else if (typ == "L") dgvDochadzka.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(219, 234, 254);
@@ -323,7 +323,7 @@ namespace Dochadzka
             if (rec != null)
             {
                 string typCode = rec.DayType;
-                int idx = typCode switch { "P" => 0, "D" => 1, "PN" => 2, "O" => 3, "L" => 4, _ => 5 };
+                int idx = typCode switch { "P" => 0, "D" => 1, "0.5D" => 2, "PN" => 3, "O" => 4, "L" => 5, _ => 6 };
                 cmbDayType.SelectedIndex = idx;
                 numHours.Value = (decimal)rec.Hours;
                 txtNote.Text = rec.Note ?? "";
@@ -340,7 +340,7 @@ namespace Dochadzka
         {
             if (_selectedDate == null || cmbEmployee.SelectedItem == null) { MessageBox.Show("Vyberte zamestnanca a deň."); return; }
             var emp = (Employee)cmbEmployee.SelectedItem;
-            string[] typCodes = { "P", "D", "PN", "O", "L", "I" };
+            string[] typCodes = { "P", "D", "0.5D", "PN", "O", "L", "I" };
             string dayType = typCodes[cmbDayType.SelectedIndex];
             _service.SaveRecord(emp.Id, _selectedDate.Value, dayType, (double)numHours.Value, txtNote.Text);
             LoadDochadzka();
@@ -359,7 +359,8 @@ namespace Dochadzka
             using var dlg = new SaveFileDialog { Filter = "PDF|*.pdf", FileName = $"Dochadzka_{_currentYear}_{_currentMonth:D2}.pdf" };
             if (dlg.ShowDialog() != DialogResult.OK) return;
             var allRecords = _service.GetAllMonthlyRecords(_currentYear, _currentMonth);
-            PdfGenerator.GenerateMonthlyReport(_employees, allRecords, _currentYear, _currentMonth, dlg.FileName);
+            var reportEmployees = _service.GetEmployeesForMonth(_currentYear, _currentMonth);
+            PdfGenerator.GenerateMonthlyReport(reportEmployees, allRecords, _currentYear, _currentMonth, dlg.FileName);
             MessageBox.Show("PDF vygenerované!", "Hotovo", MessageBoxButtons.OK, MessageBoxIcon.Information);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
         }
@@ -374,7 +375,7 @@ namespace Dochadzka
             sb.Append("Zamestnanec,Pozícia");
             for (int d = 1; d <= daysInMonth; d++) sb.Append($",{d}");
             sb.AppendLine(",Spolu hodín,Dovolenka,PN");
-            foreach (var emp in _employees)
+            foreach (var emp in _service.GetEmployeesForMonth(_currentYear, _currentMonth))
             {
                 var recs = allRecords.Where(r => r.EmployeeId == emp.Id).ToList();
                 sb.Append($"{emp.FullName},{emp.Position}");
@@ -382,7 +383,7 @@ namespace Dochadzka
                 for (int d = 1; d <= daysInMonth; d++)
                 {
                     var rec = recs.FirstOrDefault(r => r.Date.Day == d);
-                    if (rec != null) { sb.Append($",{rec.DayType}"); if (rec.DayType == "P") total += rec.Hours; if (rec.DayType == "D") dov++; if (rec.DayType == "PN") pn++; }
+                    if (rec != null) { sb.Append($",{rec.DayType}"); if (rec.DayType == "P") total += rec.Hours; if (rec.DayType == "D") dov++; if (rec.DayType == "0.5D") dov += 0.5; if (rec.DayType == "PN") pn++; }
                     else sb.Append(",");
                 }
                 sb.AppendLine($",{total},{dov},{pn}");
@@ -428,6 +429,15 @@ namespace Dochadzka
         private void ClearEmpForm()
         {
             txtFirstName.Text = ""; txtLastName.Text = ""; txtPosition.Text = "";
+        }
+
+        private sealed class DayRow
+        {
+            public int Deň { get; init; }
+            public string DenTyzdna { get; init; } = "";
+            public string Typ { get; init; } = "";
+            public string Hodiny { get; init; } = "";
+            public string Poznámka { get; init; } = "";
         }
     }
 }

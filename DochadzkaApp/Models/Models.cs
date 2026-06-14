@@ -22,6 +22,6 @@ namespace Dochadzka.Models
         public string DayType { get; set; } = "P"; // P=Práca, D=Dovolenka, PN=PN, O=OČR, L=Lekár, I=Iné
         public double Hours { get; set; } = 7.5;
         public string? Note { get; set; }
-        public virtual Employee Employee { get; set; } = null!;
+        public virtual Employee? Employee { get; set; }
     }
 }

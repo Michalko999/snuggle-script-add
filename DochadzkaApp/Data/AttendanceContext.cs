@@ -1,5 +1,7 @@
 using Dochadzka.Models;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.IO;
 
 namespace Dochadzka.Data
 {
@@ -10,7 +12,11 @@ namespace Dochadzka.Data
 
         protected override void OnConfiguring(DbContextOptionsBuilder options)
         {
-            options.UseSqlite("Data Source=data.db");
+            string dataDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DochadzkaApp");
+            Directory.CreateDirectory(dataDirectory);
+            options.UseSqlite($"Data Source={Path.Combine(dataDirectory, "data.db")}");
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

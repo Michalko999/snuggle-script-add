@@ -77,7 +77,8 @@ namespace Dochadzka.Reports
                             table.Cell().BorderBottom(0.5f).Text(emp.FullName);
 
                             double totalHours = 0;
-                            int dovDays = 0, pnDays = 0;
+                            double dovDays = 0;
+                            int pnDays = 0;
 
                             for (int d = 1; d <= daysInMonth; d++)
                             {
@@ -94,6 +95,7 @@ namespace Dochadzka.Reports
                                     {
                                         case "P": cellText = rec.Hours.ToString("0.#"); totalHours += rec.Hours; bgColor = Colors.Green.Lighten4; break;
                                         case "D": cellText = "D"; dovDays++; bgColor = Colors.Orange.Lighten3; break;
+                                        case "0.5D": cellText = "½D"; dovDays += 0.5; bgColor = Colors.Orange.Lighten3; break;
                                         case "PN": cellText = "PN"; pnDays++; bgColor = Colors.Red.Lighten3; break;
                                         case "O": cellText = "O"; bgColor = Colors.Purple.Lighten3; break;
                                         case "L": cellText = "L"; bgColor = Colors.Blue.Lighten3; break;
@@ -105,7 +107,7 @@ namespace Dochadzka.Reports
                             }
 
                             table.Cell().BorderBottom(0.5f).AlignCenter().Text(totalHours.ToString("0.#")).Bold();
-                            table.Cell().BorderBottom(0.5f).AlignCenter().Text(dovDays > 0 ? dovDays.ToString() : "–");
+                            table.Cell().BorderBottom(0.5f).AlignCenter().Text(dovDays > 0 ? dovDays.ToString("0.#") : "–");
                             table.Cell().BorderBottom(0.5f).AlignCenter().Text(pnDays > 0 ? pnDays.ToString() : "–");
                         }
                     });

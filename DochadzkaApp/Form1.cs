@@ -379,7 +379,8 @@ namespace Dochadzka
             {
                 var recs = allRecords.Where(r => r.EmployeeId == emp.Id).ToList();
                 sb.Append($"{emp.FullName},{emp.Position}");
-                double total = 0; int dov = 0, pn = 0;
+                double total = 0, dov = 0;
+                int pn = 0;
                 for (int d = 1; d <= daysInMonth; d++)
                 {
                     var rec = recs.FirstOrDefault(r => r.Date.Day == d);

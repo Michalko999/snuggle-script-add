@@ -51,7 +51,6 @@ namespace Dochadzka
         public Form1()
         {
             _service = new AttendanceService();
-            InitializeComponent();
             _service.InitializeDatabase();
             BuildUI();
             LoadEmployees();

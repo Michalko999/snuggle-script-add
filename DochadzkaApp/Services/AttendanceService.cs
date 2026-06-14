@@ -85,7 +85,7 @@ namespace Dochadzka.Services
             return db.AttendanceRecords
                 .Include(a => a.Employee)
                 .Where(a => a.Date.Year == year && a.Date.Month == month)
-                .OrderBy(a => a.Employee.LastName).ThenBy(a => a.Date)
+                .OrderBy(a => a.Employee == null ? "" : a.Employee.LastName).ThenBy(a => a.Date)
                 .ToList();
         }
 

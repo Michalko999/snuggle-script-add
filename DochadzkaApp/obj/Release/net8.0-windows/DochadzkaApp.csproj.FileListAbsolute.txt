@@ -1,5 +1,0 @@
-/dev-server/DochadzkaApp/obj/Release/net8.0-windows/DochadzkaApp.csproj.AssemblyReference.cache
-/dev-server/DochadzkaApp/obj/Release/net8.0-windows/DochadzkaApp.GeneratedMSBuildEditorConfig.editorconfig
-/dev-server/DochadzkaApp/obj/Release/net8.0-windows/DochadzkaApp.AssemblyInfoInputs.cache
-/dev-server/DochadzkaApp/obj/Release/net8.0-windows/DochadzkaApp.AssemblyInfo.cs
-/dev-server/DochadzkaApp/obj/Release/net8.0-windows/DochadzkaApp.csproj.CoreCompileInputs.cache

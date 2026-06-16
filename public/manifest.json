@@ -2,20 +2,20 @@
   "name": "Moje Úlohy",
   "short_name": "Úlohy",
   "description": "Inteligentný nákupný zoznam",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#4f46e5",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

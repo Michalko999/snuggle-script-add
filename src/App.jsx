@@ -31,6 +31,7 @@ const CATEGORY_STYLES = {
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
+const SORT_MODE_KEY = "sort-by-category-v1";
 
 function normalize(text) {
   return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]+/g, " ").trim();
@@ -120,7 +121,7 @@ function ApiKeyModal({ onSave }) {
   );
 }
 
-function TodoRow({ todo, onToggle, onDelete, onChangeCategory }) {
+function TodoRow({ todo, onToggle, onDelete, onChangeCategory, showCategory }) {
   const style = CATEGORY_STYLES[todo.category] ?? CATEGORY_STYLES["Iné"];
   return (
     <div style={{
@@ -150,24 +151,26 @@ function TodoRow({ todo, onToggle, onDelete, onChangeCategory }) {
       }}>{todo.text}</span>
 
       {/* Category chip */}
-      <label style={{
-        position: "relative", display: "inline-flex", alignItems: "center", gap: 3,
-        fontSize: "0.6rem", fontWeight: 600, padding: "2px 7px", borderRadius: 999,
-        border: "1px solid", borderColor: style.chip.border,
-        background: style.chip.bg, color: style.chip.color,
-        cursor: "pointer", flexShrink: 0, opacity: todo.completed ? 0.6 : 1,
-        whiteSpace: "nowrap",
-      }}>
-        <span style={{ width: 5, height: 5, borderRadius: "50%", background: style.dot, flexShrink: 0 }} />
-        <span>{todo.category}</span>
-        <select
-          value={todo.category}
-          onChange={e => onChangeCategory(todo.id, e.target.value)}
-          style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
-        >
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </label>
+      {showCategory && (
+        <label style={{
+          position: "relative", display: "inline-flex", alignItems: "center", gap: 3,
+          fontSize: "0.6rem", fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+          border: "1px solid", borderColor: style.chip.border,
+          background: style.chip.bg, color: style.chip.color,
+          cursor: "pointer", flexShrink: 0, opacity: todo.completed ? 0.6 : 1,
+          whiteSpace: "nowrap",
+        }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: style.dot, flexShrink: 0 }} />
+          <span>{todo.category}</span>
+          <select
+            value={todo.category}
+            onChange={e => onChangeCategory(todo.id, e.target.value)}
+            style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
+          >
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      )}
 
       {/* Delete */}
       <button onClick={() => onDelete(todo.id)} style={{
@@ -196,6 +199,7 @@ export default function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [undoState, setUndoState] = useState(null);
+  const [sortByCategory, setSortByCategory] = useState(true);
   const undoTimer = useRef(null);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
@@ -203,6 +207,8 @@ export default function App() {
   useEffect(() => {
     setTodos(loadJSON(STORAGE_KEY, []));
     setPrefs(loadJSON(PREFS_KEY, {}));
+    const storedSortMode = localStorage.getItem(SORT_MODE_KEY);
+    if (storedSortMode !== null) setSortByCategory(storedSortMode === "true");
     const key = localStorage.getItem(APIKEY_KEY);
     if (key) setApiKey(key);
     setHydrated(true);
@@ -244,11 +250,19 @@ export default function App() {
     const id = crypto.randomUUID();
     const pref = prefs[normalize(text)];
     setTodos(prev => [{ id, text, completed: false, category: pref ?? "Iné" }, ...prev]);
-    if (pref || !apiKey) return;
+    if (pref || !apiKey || !sortByCategory) return;
     try {
       const category = await categorizeItem(apiKey, text);
       setTodos(prev => prev.map(t => t.id === id ? { ...t, category } : t));
     } catch { /* keep Iné */ }
+  };
+
+  const toggleSortByCategory = () => {
+    setSortByCategory(prev => {
+      const next = !prev;
+      localStorage.setItem(SORT_MODE_KEY, String(next));
+      return next;
+    });
   };
 
   const handleImage = async (e) => {
@@ -308,13 +322,16 @@ export default function App() {
   const grouped = useMemo(() => {
     const active = todos.filter(t => !t.completed);
     const done = todos.filter(t => t.completed);
+    if (!sortByCategory) {
+      return { groups: active.length ? [{ category: null, items: active }] : [], done };
+    }
     const byCategory = new Map(CATEGORIES.map(c => [c, []]));
     active.forEach(t => byCategory.get(t.category)?.push(t));
     return {
       groups: CATEGORIES.map(c => ({ category: c, items: byCategory.get(c) ?? [] })).filter(g => g.items.length),
       done,
     };
-  }, [todos]);
+  }, [todos, sortByCategory]);
 
   const remaining = todos.filter(t => !t.completed).length;
 
@@ -332,21 +349,47 @@ export default function App() {
       <div style={{ maxWidth: 448, margin: "0 auto", padding: "1rem 1rem 6rem" }}>
 
         {/* Header */}
-        <header style={{ marginBottom: "1.25rem", paddingTop: "0.5rem", display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-          <div>
-            <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", letterSpacing: "-0.03em" }}>Moje Úlohy</h1>
-            <p style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.15rem" }}>
-              {remaining} aktívnych · {todos.length - remaining} hotových
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            {todos.some(t => t.completed) && (
-              <button onClick={clearCompleted} style={{ fontSize: "0.7rem", color: "#94a3b8", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
-                Vymazať hotové
+        <header style={{ marginBottom: "1.25rem", paddingTop: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div>
+              <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", letterSpacing: "-0.03em" }}>Moje Úlohy</h1>
+              <p style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.15rem" }}>
+                {remaining} aktívnych · {todos.length - remaining} hotových
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {todos.some(t => t.completed) && (
+                <button onClick={clearCompleted} style={{ fontSize: "0.7rem", color: "#94a3b8", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                  Vymazať hotové
+                </button>
+              )}
+              <button onClick={() => setShowApiModal(true)} title="Nastavenia API kľúča" style={{ ...btnStyle, width: 30, height: 30 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
-            )}
-            <button onClick={() => setShowApiModal(true)} title="Nastavenia API kľúča" style={{ ...btnStyle, width: 30, height: 30 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+          </div>
+
+          <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={toggleSortByCategory}
+              title="Triedenie do kategórií"
+              style={{
+                display: "flex", alignItems: "center", gap: "0.4rem",
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999,
+                padding: "0.3rem 0.6rem 0.3rem 0.7rem", cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b" }}>Triedenie do kategórií</span>
+              <span style={{
+                width: 30, height: 17, borderRadius: 999, position: "relative", flexShrink: 0,
+                background: sortByCategory ? "#4f46e5" : "#cbd5e1", transition: "background 0.15s",
+              }}>
+                <span style={{
+                  position: "absolute", top: 2, left: sortByCategory ? 15 : 2,
+                  width: 13, height: 13, borderRadius: "50%", background: "#fff",
+                  transition: "left 0.15s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                }} />
+              </span>
             </button>
           </div>
         </header>
@@ -423,20 +466,24 @@ export default function App() {
           {todos.length === 0 && !isScanning ? (
             <div style={{ textAlign: "center", paddingTop: "4rem" }}>
               <p style={{ fontSize: "1rem", color: "#94a3b8" }}>Zoznam je prázdny</p>
-              <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem" }}>Odfoť alebo vlož nákupný lístok</p>
+              <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem" }}>
+                {sortByCategory ? "Odfoť alebo vlož nákupný lístok" : "Pridaj svoju prvú úlohu"}
+              </p>
             </div>
           ) : (
             <>
               {grouped.groups.map(({ category, items }) => (
-                <section key={category}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.5rem", paddingLeft: "0.25rem" }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: CATEGORY_STYLES[category]?.dot ?? "#94a3b8", flexShrink: 0 }} />
-                    <span style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, color: "#94a3b8" }}>{category}</span>
-                    <span style={{ fontSize: "0.65rem", color: "#cbd5e1" }}>· {items.length}</span>
-                  </div>
+                <section key={category ?? "all"}>
+                  {category && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.5rem", paddingLeft: "0.25rem" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: CATEGORY_STYLES[category]?.dot ?? "#94a3b8", flexShrink: 0 }} />
+                      <span style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, color: "#94a3b8" }}>{category}</span>
+                      <span style={{ fontSize: "0.65rem", color: "#cbd5e1" }}>· {items.length}</span>
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                     {items.map(todo => (
-                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} onChangeCategory={setCategory} />
+                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} onChangeCategory={setCategory} showCategory={sortByCategory} />
                     ))}
                   </div>
                 </section>
@@ -450,7 +497,7 @@ export default function App() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                     {grouped.done.map(todo => (
-                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} onChangeCategory={setCategory} />
+                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo} onChangeCategory={setCategory} showCategory={sortByCategory} />
                     ))}
                   </div>
                 </section>

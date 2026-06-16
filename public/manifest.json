@@ -1,7 +1,7 @@
 {
   "name": "Moje Úlohy",
   "short_name": "Úlohy",
-  "description": "Inteligentný nákupný a úlohový zoznam",
+  "description": "Inteligentný nákupný zoznam",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",

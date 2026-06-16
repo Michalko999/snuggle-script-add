@@ -492,7 +492,7 @@ function TodoRow({
       </button>
 
       <span
-        className={`flex-1 text-[15px] ${
+        className={`flex-1 text-[12px] ${
           todo.completed ? "line-through text-slate-400" : "text-slate-800"
         }`}
       >
@@ -501,7 +501,7 @@ function TodoRow({
 
       {/* Category chip with native select for category change */}
       <label
-        className={`relative inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full border cursor-pointer ${style.chip} ${
+        className={`relative inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border cursor-pointer ${style.chip} ${
           todo.completed ? "opacity-60" : ""
         }`}
         title="Zmeniť kategóriu"

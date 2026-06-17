@@ -88,6 +88,8 @@
   .sum-cell.teal{background:#A5F3FC;color:#164E63;font-weight:700}
   th.weekend-header{background:var(--weekend-bg)!important}
   th.holiday-header{background:var(--holiday-bg)!important}
+  th.today-header{background:#EFF6FF!important;border-top:2px solid #3B82F6!important}
+  td.today-col{border-left-color:#BFDBFE!important;border-right-color:#BFDBFE!important}
 
   .legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
   .legend-item{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;color:var(--slate)}
@@ -954,13 +956,14 @@ function renderMatrix() {
   const now = new Date();
   const isFuture = (y>now.getFullYear())||(y===now.getFullYear()&&m>now.getMonth()+1);
   const isPast = (y<now.getFullYear())||(y===now.getFullYear()&&m<now.getMonth()+1);
+  const todayD = (y===now.getFullYear()&&m===now.getMonth()+1) ? now.getDate() : -1;
   const table = document.getElementById('matrix-table');
 
   let html = '<thead><tr>';
   html += `<th class="col-name">${MONTHS_SK[m-1]} ${y}</th>`;
   for (let d=1;d<=days;d++) {
     const {isWE,isHol,dayName}=getDayInfo(y,m,d,holidays);
-    const cls=isHol?'holiday-header':isWE?'weekend-header':'';
+    const cls=[isHol?'holiday-header':isWE?'weekend-header':'', d===todayD?'today-header':''].filter(Boolean).join(' ');
     html+=`<th class="${cls}"><div class="day-header"><div class="day-num">${d}</div><div class="day-name">${dayName}</div></div></th>`;
   }
   html+='<th class="sum-header">Hod.</th><th class="sum-header">Prac.</th><th class="sum-header">D</th><th class="sum-header">PN</th><th class="sum-header">OČR</th><th class="sum-header">L</th></tr></thead><tbody>';
@@ -979,10 +982,11 @@ function renderMatrix() {
       const defaultEntry=(isPast&&!storedEntry)?{type:'P',hours:7.5}:undefined;
       const entry=storedEntry||defaultEntry;
 
+      const todayCls = d===todayD ? ' today-col' : '';
       if (isHol) {
-        html+=`<td class="day-cell holiday-col"><div class="status-chip s-holiday">SVK</div></td>`;
+        html+=`<td class="day-cell holiday-col${todayCls}"><div class="status-chip s-holiday">SVK</div></td>`;
       } else if (isWE) {
-        html+=`<td class="day-cell weekend-col"><div class="status-chip s-weekend">${DAYS_SK[new Date(y,m-1,d).getDay()]}</div></td>`;
+        html+=`<td class="day-cell weekend-col${todayCls}"><div class="status-chip s-weekend">${DAYS_SK[new Date(y,m-1,d).getDay()]}</div></td>`;
       } else if (entry) {
         const t=entry.type, h=entry.hours||7.5;
         if(t==='P'){totalH+=h;totalP++;}
@@ -999,9 +1003,9 @@ function renderMatrix() {
         const noteText = (storedEntry&&storedEntry.note) ? (storedEntry.note||'').replace(/[<>"'&]/g, ch=>({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;'}[ch])) : '';
         const hasNote = noteText ? ' has-note' : '';
         const noteAttr = noteText ? ` data-note="${noteText}"` : '';
-        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="duringDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
+        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="duringDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
       } else {
-        html+=`<td class="day-cell" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
+        html+=`<td class="day-cell${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
       }
     }
     html+=`<td class="sum-cell">${totalH.toFixed(2)}</td><td class="sum-cell">${totalP}</td><td class="sum-cell green">${totalD>0?totalD:'—'}</td><td class="sum-cell red">${totalPN>0?totalPN:'—'}</td><td class="sum-cell amber">${totalOCR>0?totalOCR:'—'}</td><td class="sum-cell teal">${totalL>0?totalL:'—'}</td></tr>`;

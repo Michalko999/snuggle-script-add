@@ -90,14 +90,22 @@ async function resizeImage(file, maxPx = 1024) {
 }
 
 async function scanImage(apiKey, mimeType, base64Data) {
-  const prompt = `Prečítaj tento nákupný zoznam a extrahuj všetky položky. Pre každú urči kategóriu z: ${CATEGORIES.join(", ")}. Odpovedz LEN validným JSON poľom bez markdown, napr: [{"text":"mlieko","category":"Mliečne výrobky"}]`;
+  const prompt = `Analyzuj tento obrázok nákupného zoznamu (môže byť písaný rukou alebo tlačený).
+
+Pravidlá:
+- Extrahuj VŠETKY položky vrátane tých písaných nejasne alebo skratkami
+- Ignoruj prečiarknuté položky
+- Odstraň množstvá a jednotky (napr. "2x mlieko 1L" → text: "mlieko")
+- Oprav zrejmé preklepy a skratky (napr. "chlib" → "chlieb", "jog." → "jogurt")
+- Pre každú položku urči kategóriu z: ${CATEGORIES.join(", ")}
+- Odpovedz LEN validným JSON poľom bez markdown, napr: [{"text":"mlieko","category":"Mliečne výrobky"}]`;
   const data = await callAnthropic(apiKey, [{
     role: "user",
     content: [
       { type: "image", source: { type: "base64", media_type: mimeType, data: base64Data } },
       { type: "text", text: prompt },
     ],
-  }], null, 1024);
+  }], null, 2048);
   const raw = data.content?.[0]?.text ?? "";
   const clean = raw.replace(/```json|```/g, "").trim();
   try {
@@ -318,7 +326,7 @@ export default function App() {
     setIsScanning(true);
     setErrorMsg(null);
     try {
-        const { base64: base64Data, mimeType } = await resizeImage(file);
+        const { base64: base64Data, mimeType } = await resizeImage(file, 1600);
       const items = await scanImage(apiKey, mimeType, base64Data);
       if (!items.length) { setErrorMsg("Na obrázku som nenašiel žiadne položky."); return; }
       const newTodos = items.map(i => ({

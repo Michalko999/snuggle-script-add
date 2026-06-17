@@ -224,6 +224,7 @@
   .filter-chip.chip-L.active  { border-color: var(--teal); background: var(--teal-bg); color: #164E63; }
   .filter-chip.chip-PN.active { border-color: var(--red); background: var(--red-bg); color: #7F1D1D; }
   .filter-chip.chip-OČR.active{ border-color: var(--amber); background: var(--amber-bg); color: #78350F; }
+  .filter-chip.chip-LD.active { border-color: #7C3AED; background: #EDE9FE; color: #3B0764; }
   .events-list { display: flex; flex-direction: column; gap: 6px; }
   .event-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: var(--radius); border: 1px solid var(--slate-border); background: var(--white); font-size: .82rem; transition: box-shadow .15s; }
   .event-row:hover { box-shadow: var(--shadow-md); }
@@ -389,6 +390,7 @@
                   <button class="filter-chip chip-L" data-filter="L" onclick="setUpcomingFilter('L',this)">🏥 L</button>
                   <button class="filter-chip chip-PN" data-filter="PN" onclick="setUpcomingFilter('PN',this)">🤒 PN</button>
                   <button class="filter-chip chip-OČR" data-filter="OČR" onclick="setUpcomingFilter('OČR',this)">👶 OČR</button>
+                  <button class="filter-chip chip-LD" data-filter="LD" onclick="setUpcomingFilter('LD',this)">🏥🏖 L/D</button>
                 </div>
               </div>
               <div class="events-list" id="events-list"></div>
@@ -1980,20 +1982,21 @@ function downloadImportTemplate() {
 let upcomingFilter = 'all';
 
 const EVENT_CONFIG = {
-  D:   { label:'Dovolenka', dot:'#16A34A', bg:'#DCFCE7', color:'#14532D', icon:'🏖' },
-  Dh:  { label:'½ Dovolenka', dot:'#16A34A', bg:'#DCFCE7', color:'#14532D', icon:'🏖' },
-  L:   { label:'Lekár', dot:'#0891B2', bg:'#CFFAFE', color:'#164E63', icon:'🏥' },
-  Lh:  { label:'½ Lekár', dot:'#0891B2', bg:'#CFFAFE', color:'#164E63', icon:'🏥' },
-  LD:  { label:'Lekár+Dovolenka', dot:'#7C3AED', bg:'#EDE9FE', color:'#3B0764', icon:'🏥' },
-  PN:  { label:'PN', dot:'#DC2626', bg:'#FEE2E2', color:'#7F1D1D', icon:'🤒' },
-  'OČR':{ label:'OČR', dot:'#D97706', bg:'#FEF3C7', color:'#78350F', icon:'👶' },
+  D:    { label:'Dovolenka',       dot:'#16A34A', bg:'#DCFCE7', color:'#14532D', icon:'🏖' },
+  Dh:   { label:'½ Dovolenka',     dot:'#16A34A', bg:'#DCFCE7', color:'#14532D', icon:'🏖' },
+  L:    { label:'Lekár',           dot:'#0891B2', bg:'#CFFAFE', color:'#164E63', icon:'🏥' },
+  Lh:   { label:'½ Lekár',         dot:'#0891B2', bg:'#CFFAFE', color:'#164E63', icon:'🏥' },
+  LD:   { label:'Lekár+Dovolenka', dot:'#7C3AED', bg:'#EDE9FE', color:'#3B0764', icon:'🏥🏖' },
+  PN:   { label:'PN',              dot:'#DC2626', bg:'#FEE2E2', color:'#7F1D1D', icon:'🤒' },
+  'OČR':{ label:'OČR',             dot:'#D97706', bg:'#FEF3C7', color:'#78350F', icon:'👶' },
 };
 
 // Map filter chips to matching types
 const FILTER_TYPES = {
-  all:  ['D','Dh','L','Lh','LD','PN','OČR'],
-  D:    ['D','Dh','LD'],
-  L:    ['L','Lh','LD'],
+  all:  Object.keys(EVENT_CONFIG),
+  D:    ['D','Dh'],
+  L:    ['L','Lh'],
+  LD:   ['LD'],
   PN:   ['PN'],
   'OČR':['OČR'],
 };
@@ -2052,13 +2055,13 @@ function renderUpcomingEvents() {
   events.forEach((ev, i) => {
     if (used.has(i)) return;
     // Find consecutive days for same person + compatible type group
-    const typeGroup = ev.type.startsWith('D') ? 'D' : ev.type.startsWith('L') ? 'L' : ev.type;
+    const typeGroup = ev.type === 'LD' ? 'LD' : ev.type.startsWith('D') ? 'D' : ev.type.startsWith('L') ? 'L' : ev.type;
     let end = ev.date;
     let last = i;
     for (let j = i+1; j < events.length; j++) {
       if (used.has(j)) continue;
       const nxt = events[j];
-      const nxtGroup = nxt.type.startsWith('D') ? 'D' : nxt.type.startsWith('L') ? 'L' : nxt.type;
+      const nxtGroup = nxt.type === 'LD' ? 'LD' : nxt.type.startsWith('D') ? 'D' : nxt.type.startsWith('L') ? 'L' : nxt.type;
       if (nxt.empName !== ev.empName || nxtGroup !== typeGroup) continue;
       // Check if next working day
       const diff = Math.round((nxt.date - end) / 86400000);

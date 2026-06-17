@@ -964,7 +964,7 @@ function renderMatrix() {
 
   state.employees.forEach(emp => {
     let totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
-    html+=`<tr><td class="col-name">${emp.firstName||''} ${emp.lastName||''}</td>`;
+    html+=`<tr><td class="col-name">${emp.lastName||''} ${emp.firstName||''}</td>`;
     for (let d=1;d<=days;d++) {
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       const ak=attKey(emp.id,y,m,d);
@@ -992,9 +992,9 @@ function renderMatrix() {
         const noteText = (storedEntry&&storedEntry.note) ? (storedEntry.note||'').replace(/[<>"'&]/g, ch=>({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;'}[ch])) : '';
         const hasNote = noteText ? ' has-note' : '';
         const noteAttr = noteText ? ` data-note="${noteText}"` : '';
-        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.firstName} ${emp.lastName}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="duringDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
+        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="duringDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
       } else {
-        html+=`<td class="day-cell" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.firstName} ${emp.lastName}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
+        html+=`<td class="day-cell" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
       }
     }
     html+=`<td class="sum-cell">${totalH.toFixed(2)}</td><td class="sum-cell">${totalP}</td><td class="sum-cell green">${totalD>0?totalD:'—'}</td><td class="sum-cell red">${totalPN>0?totalPN:'—'}</td><td class="sum-cell amber">${totalOCR>0?totalOCR:'—'}</td><td class="sum-cell teal">${totalL>0?totalL:'—'}</td></tr>`;
@@ -1249,7 +1249,7 @@ function renderNoise() {
   html+='<th class="sum-header">Hodín</th><th class="sum-header">Suma €</th></tr></thead><tbody>';
   let grandT=0,grandA=0;
   // Combine main employees + noise-only employees
-  const mainEmps = state.employees.map(e => ({ id: e.id, name: `${e.firstName||''} ${e.lastName||''}`.trim(), isNoiseOnly: false }));
+  const mainEmps = state.employees.map(e => ({ id: e.id, name: `${e.lastName||''} ${e.firstName||''}`.trim(), isNoiseOnly: false }));
   const noiseOnlyEmps = (state.noiseEmployees||[]).map(e => ({ id: e.id, name: e.name, isNoiseOnly: true }));
   const allNoiseEmps = [...mainEmps, ...noiseOnlyEmps];
 
@@ -1400,7 +1400,7 @@ function noiseNav(e, input) {
 // ==================== EMPLOYEES ====================
 function renderEmployees() {
   const q=document.getElementById('emp-search')?.value.toLowerCase()||'';
-  const filtered=state.employees.filter(e=>`${e.firstName} ${e.lastName}`.toLowerCase().includes(q));
+  const filtered=state.employees.filter(e=>`${e.lastName} ${e.firstName}`.toLowerCase().includes(q));
   const grid=document.getElementById('emp-grid');
   const empty=document.getElementById('emp-empty');
   if(!filtered.length){grid.innerHTML='';empty.style.display='block';return;}
@@ -1408,7 +1408,7 @@ function renderEmployees() {
   const colors=['#2563EB','#7C3AED','#0891B2','#16A34A','#DC2626','#D97706','#DB2777'];
   grid.innerHTML=filtered.map(e=>{
     const color=colors[state.employees.indexOf(e)%colors.length];
-    const initials=((e.firstName||'')[0]||'').toUpperCase()+((e.lastName||'')[0]||'').toUpperCase();
+    const initials=((e.lastName||'')[0]||'').toUpperCase()+((e.firstName||'')[0]||'').toUpperCase();
     const now=new Date(); const y=now.getFullYear();
     // Count this year's absences
     let vacUsed=0,pnDays=0;
@@ -1430,7 +1430,7 @@ function renderEmployees() {
       <div class="emp-header">
         <div class="emp-avatar" style="background:${color}">${initials}</div>
         <div style="flex:1;min-width:0">
-          <div class="emp-name">${e.firstName} ${e.lastName}</div>
+          <div class="emp-name">${e.lastName} ${e.firstName}</div>
           ${e.position?`<div class="emp-pos">💼 ${e.position}</div>`:''}
         </div>
         ${e.employeeId?`<span class="badge badge-blue">${e.employeeId}</span>`:''}
@@ -1542,7 +1542,7 @@ function exportCSV() {
   const isPast=(y<now.getFullYear())||(y===now.getFullYear()&&m<now.getMonth()+1);
   let csv=`Zamestnanec,${Array.from({length:days},(_,i)=>i+1).join(',')},Hodiny,Pracovné,D,PN,OČR,L\n`;
   state.employees.forEach(emp=>{
-    let row=`${emp.firstName} ${emp.lastName}`,totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
+    let row=`${emp.lastName} ${emp.firstName}`,totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       if(isHol){row+=',SVK';continue;} if(isWE){row+=',—';continue;}
@@ -1572,7 +1572,7 @@ function exportExcel() {
   const header=['Zamestnanec',...Array.from({length:days},(_,i)=>i+1),'Hodiny','Pracovné','D','PN','OČR','L'];
   const rows=[header];
   state.employees.forEach(emp=>{
-    let row=[`${emp.firstName} ${emp.lastName}`];
+    let row=[`${emp.lastName} ${emp.firstName}`];
     let totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
@@ -1603,7 +1603,7 @@ function exportNoiseExcel() {
   const header=['Zamestnanec',...Array.from({length:days},(_,i)=>i+1),'Celkom hodín',`Suma (${rate} €/h)`];
   const rows=[header];
   const exportEmps = [
-    ...state.employees.map(e=>({ id:e.id, name:`${e.firstName||''} ${e.lastName||''}`.trim() })),
+    ...state.employees.map(e=>({ id:e.id, name:`${e.lastName||''} ${e.firstName||''}`.trim() })),
     ...(state.noiseEmployees||[]).map(e=>({ id:e.id, name:e.name }))
   ];
   exportEmps.forEach(emp=>{
@@ -1668,7 +1668,7 @@ function computeYearData(y) {
   const result = {}; // empId -> { name, vacation, months: [12 x {D,PN,L,OCR}], totals }
   state.employees.forEach(emp => {
     result[emp.id] = {
-      name: `${emp.firstName||''} ${emp.lastName||''}`.trim(),
+      name: `${emp.lastName||''} ${emp.firstName||''}`.trim(),
       vacationAllowance: +(emp.vacationDays || emp.vacation || 20),
       months: Array.from({length:12}, () => ({D:0,PN:0,L:0,OCR:0})),
       totals: {D:0,PN:0,L:0,OCR:0}
@@ -1925,7 +1925,7 @@ function renderImportPreview() {
         const cls = !r.valid ? 'import-row-err' : r.duplicate ? '' : 'import-row-ok';
         const stav = !r.valid ? '❌ Chýba meno' : r.duplicate ? '⚠️ Existuje' : '✅ Nový';
         return `<tr class="${cls}">
-          <td>${i+1}</td><td>${r.firstName}</td><td>${r.lastName}</td>
+          <td>${i+1}</td><td>${r.lastName}</td><td>${r.firstName}</td>
           <td>${r.employeeId}</td><td>${r.position}</td><td>${r.phone}</td>
           <td>${r.vacationDays}</td><td>${stav}</td>
         </tr>`;
@@ -2024,7 +2024,7 @@ function renderUpcomingEvents() {
       const cfg = EVENT_CONFIG[t];
       if (!cfg) return;
       events.push({
-        empName: `${emp.firstName||''} ${emp.lastName||''}`.trim(),
+        empName: `${emp.lastName||''} ${emp.firstName||''}`.trim(),
         date: new Date(d),
         type: t,
         cfg,
@@ -2127,7 +2127,7 @@ function renderTodayAbsences() {
     const cfg = EVENT_CONFIG[entry.type];
     if (!cfg) return;
     absent.push({
-      empName: `${emp.firstName||''} ${emp.lastName||''}`.trim(),
+      empName: `${emp.lastName||''} ${emp.firstName||''}`.trim(),
       type: entry.type,
       cfg,
       note: entry.note || '',

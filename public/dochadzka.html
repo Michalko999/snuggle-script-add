@@ -875,6 +875,13 @@ function guardState() {
 }
 
 function loadState() { loadFromLocal(); } // fallback for undo/backup
+
+function sortedEmps() {
+  return [...state.employees].sort((a, b) => {
+    const la = (a.lastName || '').localeCompare(b.lastName || '', 'sk');
+    return la !== 0 ? la : (a.firstName || '').localeCompare(b.firstName || '', 'sk');
+  });
+}
 loadFromLocal(); // fast initial render from cache
 
 // ==================== CONSTANTS ====================
@@ -962,7 +969,7 @@ function renderMatrix() {
     html+=`<tr><td colspan="${days+7}" style="padding:20px;color:var(--slate);text-align:center">Žiadni zamestnanci. Pridajte ich v sekcii Zamestnanci.</td></tr>`;
   }
 
-  state.employees.forEach(emp => {
+  sortedEmps().forEach(emp => {
     let totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     html+=`<tr><td class="col-name">${emp.lastName||''} ${emp.firstName||''}</td>`;
     for (let d=1;d<=days;d++) {
@@ -1249,7 +1256,7 @@ function renderNoise() {
   html+='<th class="sum-header">Hodín</th><th class="sum-header">Suma €</th></tr></thead><tbody>';
   let grandT=0,grandA=0;
   // Combine main employees + noise-only employees
-  const mainEmps = state.employees.map(e => ({ id: e.id, name: `${e.lastName||''} ${e.firstName||''}`.trim(), isNoiseOnly: false }));
+  const mainEmps = sortedEmps().map(e => ({ id: e.id, name: `${e.lastName||''} ${e.firstName||''}`.trim(), isNoiseOnly: false }));
   const noiseOnlyEmps = (state.noiseEmployees||[]).map(e => ({ id: e.id, name: e.name, isNoiseOnly: true }));
   const allNoiseEmps = [...mainEmps, ...noiseOnlyEmps];
 
@@ -1400,7 +1407,7 @@ function noiseNav(e, input) {
 // ==================== EMPLOYEES ====================
 function renderEmployees() {
   const q=document.getElementById('emp-search')?.value.toLowerCase()||'';
-  const filtered=state.employees.filter(e=>`${e.lastName} ${e.firstName}`.toLowerCase().includes(q));
+  const filtered=sortedEmps().filter(e=>`${e.lastName} ${e.firstName}`.toLowerCase().includes(q));
   const grid=document.getElementById('emp-grid');
   const empty=document.getElementById('emp-empty');
   if(!filtered.length){grid.innerHTML='';empty.style.display='block';return;}
@@ -1541,7 +1548,7 @@ function exportCSV() {
   const now=new Date();
   const isPast=(y<now.getFullYear())||(y===now.getFullYear()&&m<now.getMonth()+1);
   let csv=`Zamestnanec,${Array.from({length:days},(_,i)=>i+1).join(',')},Hodiny,Pracovné,D,PN,OČR,L\n`;
-  state.employees.forEach(emp=>{
+  sortedEmps().forEach(emp=>{
     let row=`${emp.lastName} ${emp.firstName}`,totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
@@ -1571,7 +1578,7 @@ function exportExcel() {
   const wb=XLSX.utils.book_new();
   const header=['Zamestnanec',...Array.from({length:days},(_,i)=>i+1),'Hodiny','Pracovné','D','PN','OČR','L'];
   const rows=[header];
-  state.employees.forEach(emp=>{
+  sortedEmps().forEach(emp=>{
     let row=[`${emp.lastName} ${emp.firstName}`];
     let totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     for(let d=1;d<=days;d++){
@@ -1603,7 +1610,7 @@ function exportNoiseExcel() {
   const header=['Zamestnanec',...Array.from({length:days},(_,i)=>i+1),'Celkom hodín',`Suma (${rate} €/h)`];
   const rows=[header];
   const exportEmps = [
-    ...state.employees.map(e=>({ id:e.id, name:`${e.lastName||''} ${e.firstName||''}`.trim() })),
+    ...sortedEmps().map(e=>({ id:e.id, name:`${e.lastName||''} ${e.firstName||''}`.trim() })),
     ...(state.noiseEmployees||[]).map(e=>({ id:e.id, name:e.name }))
   ];
   exportEmps.forEach(emp=>{
@@ -1666,7 +1673,7 @@ function getStatsYear() {
 // Compute all absences for a given year
 function computeYearData(y) {
   const result = {}; // empId -> { name, vacation, months: [12 x {D,PN,L,OCR}], totals }
-  state.employees.forEach(emp => {
+  sortedEmps().forEach(emp => {
     result[emp.id] = {
       name: `${emp.lastName||''} ${emp.firstName||''}`.trim(),
       vacationAllowance: +(emp.vacationDays || emp.vacation || 20),
@@ -2015,7 +2022,7 @@ function renderUpcomingEvents() {
     const {isWE, isHol} = getDayInfo(y, mo, day, holidays);
     if (isWE || isHol) continue;
 
-    state.employees.forEach(emp => {
+    sortedEmps().forEach(emp => {
       const ak = attKey(emp.id, y, mo, day);
       const entry = state.attendance && state.attendance[ak];
       if (!entry) return;
@@ -2119,7 +2126,7 @@ function renderTodayAbsences() {
   const absent = [];
   const absenceTypes = ['D','Dh','L','Lh','LD','PN','OČR'];
 
-  state.employees.forEach(emp => {
+  sortedEmps().forEach(emp => {
     const ak = attKey(emp.id, y, mo, day);
     const entry = state.attendance && state.attendance[ak];
     if (!entry) return;

@@ -46,16 +46,21 @@ function loadJSON(key, fallback) {
 async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
   const body = { model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages };
   if (system) body.system = system;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-      "anthropic-dangerous-direct-browser-calls": "true",
-    },
-    body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "anthropic-dangerous-direct-browser-calls": "true",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(`Sieťová chyba (CORS alebo offline): ${e.message}. Skontroluj API kľúč a pripojenie.`);
+  }
   if (res.status === 401) throw new Error("Neplatný API kľúč. Skontroluj ho v nastaveniach.");
   if (res.status === 429) throw new Error("Príliš veľa požiadaviek. Skús neskôr.");
   if (!res.ok) { const t = await res.text().catch(() => ""); throw new Error(`API chyba ${res.status}: ${t}`); }

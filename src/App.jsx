@@ -28,6 +28,7 @@ const CATEGORY_STYLES = {
   "Iné":                   { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
+const APP_VERSION = "1.1";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
@@ -400,7 +401,10 @@ export default function App() {
         <header style={{ marginBottom: "1.25rem", paddingTop: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
             <div>
-              <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", letterSpacing: "-0.03em" }}>Moje Úlohy</h1>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+                <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", letterSpacing: "-0.03em" }}>Moje Úlohy</h1>
+                <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#cbd5e1" }}>v{APP_VERSION}</span>
+              </div>
               <p style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.15rem" }}>
                 {remaining} aktívnych · {todos.length - remaining} hotových
               </p>

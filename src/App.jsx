@@ -31,6 +31,7 @@ const CATEGORY_STYLES = {
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
+const PROXY_KEY = "anthropic-proxy-url";
 const SORT_MODE_KEY = "sort-by-category-v1";
 
 function normalize(text) {
@@ -44,11 +45,13 @@ function loadJSON(key, fallback) {
 // ── Anthropic API helpers ────────────────────────────────────────
 
 async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
+  const proxyUrl = localStorage.getItem(PROXY_KEY) ?? "";
+  const url = proxyUrl.trim() || "https://api.anthropic.com/v1/messages";
   const body = { model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages };
   if (system) body.system = system;
   let res;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
+    res = await fetch(url, {
       method: "POST",
       headers: {
         "x-api-key": apiKey,
@@ -58,7 +61,8 @@ async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
       body: JSON.stringify(body),
     });
   } catch (e) {
-    throw new Error(`Sieťová chyba (CORS alebo offline): ${e.message}. Skontroluj API kľúč a pripojenie.`);
+    const hint = proxyUrl.trim() ? "" : " Nastav Cloudflare Worker proxy v nastaveniach.";
+    throw new Error(`Sieťová chyba: ${e.message}.${hint}`);
   }
   if (res.status === 401) throw new Error("Neplatný API kľúč. Skontroluj ho v nastaveniach.");
   if (res.status === 429) throw new Error("Príliš veľa požiadaviek. Skús neskôr.");
@@ -115,29 +119,45 @@ async function categorizeItem(apiKey, text) {
 // ── Components ───────────────────────────────────────────────────
 
 function ApiKeyModal({ onSave }) {
-  const [val, setVal] = useState("");
+  const [val, setVal] = useState(() => localStorage.getItem(APIKEY_KEY) ?? "");
+  const [proxy, setProxy] = useState(() => localStorage.getItem(PROXY_KEY) ?? "");
+  const canSave = val.trim();
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
-      <div style={{ background: "#fff", borderRadius: "1rem", padding: "1.5rem", maxWidth: 400, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <h2 style={{ fontSize: "1.125rem", fontWeight: 700, marginBottom: "0.5rem", color: "#1e293b" }}>Nastav Anthropic API kľúč</h2>
-        <p style={{ fontSize: "0.8rem", color: "#64748b", marginBottom: "1rem", lineHeight: 1.5 }}>
-          Kľúč nájdeš na <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: "#4f46e5" }}>console.anthropic.com</a> → API Keys. Ukladá sa len v tvojom prehliadači.
+      <div style={{ background: "#fff", borderRadius: "1rem", padding: "1.5rem", maxWidth: 420, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <h2 style={{ fontSize: "1.125rem", fontWeight: 700, marginBottom: "1rem", color: "#1e293b" }}>Nastavenia AI</h2>
+
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Anthropic API kľúč</p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "6px", lineHeight: 1.5 }}>
+          Nájdeš na <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: "#4f46e5" }}>console.anthropic.com</a> → API Keys.
         </p>
         <input
           type="password"
           value={val}
           onChange={e => setVal(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && val.trim() && onSave(val.trim())}
           placeholder="sk-ant-..."
           style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem 0.8rem", fontSize: "0.875rem", outline: "none", marginBottom: "1rem" }}
           autoFocus
         />
+
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Cloudflare Worker URL <span style={{ fontWeight: 400, color: "#94a3b8" }}>(proxy pre CORS)</span></p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "6px", lineHeight: 1.5 }}>
+          Povinné pre použitie z webu. Postup: <strong>cloudflare-worker.js</strong> v repozitári → nasaď na Cloudflare Workers → sem vlož URL.
+        </p>
+        <input
+          type="url"
+          value={proxy}
+          onChange={e => setProxy(e.target.value)}
+          placeholder="https://moj-proxy.username.workers.dev"
+          style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem 0.8rem", fontSize: "0.875rem", outline: "none", marginBottom: "1.25rem" }}
+        />
+
         <button
-          onClick={() => val.trim() && onSave(val.trim())}
-          disabled={!val.trim()}
-          style={{ width: "100%", background: "#4f46e5", color: "#fff", border: "none", borderRadius: "0.5rem", padding: "0.65rem", fontWeight: 600, fontSize: "0.9rem", cursor: val.trim() ? "pointer" : "not-allowed", opacity: val.trim() ? 1 : 0.5 }}
+          onClick={() => canSave && onSave(val.trim(), proxy.trim())}
+          disabled={!canSave}
+          style={{ width: "100%", background: "#4f46e5", color: "#fff", border: "none", borderRadius: "0.5rem", padding: "0.65rem", fontWeight: 600, fontSize: "0.9rem", cursor: canSave ? "pointer" : "not-allowed", opacity: canSave ? 1 : 0.5 }}
         >
-          Uložiť a pokračovať
+          Uložiť
         </button>
       </div>
     </div>
@@ -241,8 +261,10 @@ export default function App() {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, hydrated]);
 
-  const saveApiKey = (key) => {
+  const saveApiKey = (key, proxyUrl = "") => {
     localStorage.setItem(APIKEY_KEY, key);
+    if (proxyUrl) localStorage.setItem(PROXY_KEY, proxyUrl);
+    else localStorage.removeItem(PROXY_KEY);
     setApiKey(key);
     setShowApiModal(false);
   };

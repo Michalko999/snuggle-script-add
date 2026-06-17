@@ -28,7 +28,7 @@ const CATEGORY_STYLES = {
   "Iné":                   { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
@@ -45,10 +45,10 @@ function loadJSON(key, fallback) {
 
 // ── Anthropic API helpers ────────────────────────────────────────
 
-async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
+async function callAnthropic(apiKey, messages, system = null, maxTokens = 512, model = "claude-haiku-4-5-20251001") {
   const proxyUrl = localStorage.getItem(PROXY_KEY) ?? "";
   const url = proxyUrl.trim() || "https://api.anthropic.com/v1/messages";
-  const body = { model: "claude-haiku-4-5-20251001", max_tokens: maxTokens, messages };
+  const body = { model, max_tokens: maxTokens, messages };
   if (system) body.system = system;
   let res;
   try {
@@ -91,22 +91,21 @@ async function resizeImage(file, maxPx = 1024) {
 }
 
 async function scanImage(apiKey, mimeType, base64Data) {
-  const prompt = `Analyzuj tento obrázok nákupného zoznamu (môže byť písaný rukou alebo tlačený).
-
-Pravidlá:
-- Extrahuj VŠETKY položky vrátane tých písaných nejasne alebo skratkami
-- Ignoruj prečiarknuté položky
-- Odstraň množstvá a jednotky (napr. "2x mlieko 1L" → text: "mlieko")
-- Oprav zrejmé preklepy a skratky (napr. "chlib" → "chlieb", "jog." → "jogurt")
-- Pre každú položku urči kategóriu z: ${CATEGORIES.join(", ")}
-- Odpovedz LEN validným JSON poľom bez markdown, napr: [{"text":"mlieko","category":"Mliečne výrobky"}]`;
+  const system = `Si expertný čítač slovenských nákupných zoznamov (tlačených aj písaných rukou).
+PRAVIDLÁ:
+1. Prečítaj text v obrázku doslovne — neupravuj, nevymýšľaj, nepridávaj položky ktoré tam nie sú
+2. Ignoruj prečiarknuté položky
+3. Odstráň len čísla a jednotky (napr. "2x" "1L" "kg") — samotné slovo ponechaj
+4. Jednoslovné skratky dokonči len ak je to jednoznačné (napr. "toaletný" → "toaletný papier")
+5. Každej položke prirad kategóriu z: ${CATEGORIES.join(", ")}
+6. Odpovedz VÝHRADNE validným JSON poľom, bez akéhokoľvek ďalšieho textu: [{"text":"...","category":"..."}]`;
   const data = await callAnthropic(apiKey, [{
     role: "user",
     content: [
       { type: "image", source: { type: "base64", media_type: mimeType, data: base64Data } },
-      { type: "text", text: prompt },
+      { type: "text", text: "Extrahuj položky z tohto nákupného zoznamu." },
     ],
-  }], null, 2048);
+  }], system, 2048, "claude-sonnet-4-6");
   const raw = data.content?.[0]?.text ?? "";
   const clean = raw.replace(/```json|```/g, "").trim();
   try {

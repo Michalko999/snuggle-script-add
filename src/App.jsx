@@ -54,7 +54,6 @@ async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-calls": "true",
       },
       body: JSON.stringify(body),
     });

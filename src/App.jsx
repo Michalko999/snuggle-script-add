@@ -62,6 +62,25 @@ async function callAnthropic(apiKey, messages, system = null, maxTokens = 512) {
   return res.json();
 }
 
+async function resizeImage(file, maxPx = 1024) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataURL = canvas.toDataURL("image/jpeg", 0.85);
+      resolve({ base64: dataURL.split(",")[1], mimeType: "image/jpeg" });
+    };
+    img.onerror = () => reject(new Error("Nepodarilo sa načítať obrázok."));
+    img.src = url;
+  });
+}
+
 async function scanImage(apiKey, mimeType, base64Data) {
   const prompt = `Prečítaj tento nákupný zoznam a extrahuj všetky položky. Pre každú urči kategóriu z: ${CATEGORIES.join(", ")}. Odpovedz LEN validným JSON poľom bez markdown, napr: [{"text":"mlieko","category":"Mliečne výrobky"}]`;
   const data = await callAnthropic(apiKey, [{
@@ -254,7 +273,7 @@ export default function App() {
     try {
       const category = await categorizeItem(apiKey, text);
       setTodos(prev => prev.map(t => t.id === id ? { ...t, category } : t));
-    } catch { /* keep Iné */ }
+    } catch (err) { setErrorMsg(err.message ?? "Kategorizácia zlyhala."); }
   };
 
   const toggleSortByCategory = () => {
@@ -273,13 +292,8 @@ export default function App() {
     setIsScanning(true);
     setErrorMsg(null);
     try {
-      const base64Data = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1] ?? "");
-        r.onerror = () => rej(new Error("Nepodarilo sa načítať súbor."));
-        r.readAsDataURL(file);
-      });
-      const items = await scanImage(apiKey, file.type, base64Data);
+        const { base64: base64Data, mimeType } = await resizeImage(file);
+      const items = await scanImage(apiKey, mimeType, base64Data);
       if (!items.length) { setErrorMsg("Na obrázku som nenašiel žiadne položky."); return; }
       const newTodos = items.map(i => ({
         id: crypto.randomUUID(), text: i.text.trim(),

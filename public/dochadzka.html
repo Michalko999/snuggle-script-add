@@ -1440,12 +1440,9 @@ function renderEmployees() {
   const empty=document.getElementById('emp-empty');
   if(!filtered.length){grid.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  const colors=['#2563EB','#7C3AED','#0891B2','#16A34A','#DC2626','#D97706','#DB2777'];
-  grid.innerHTML=filtered.map(e=>{
-    const color=colors[state.employees.indexOf(e)%colors.length];
-    const initials=((e.lastName||'')[0]||'').toUpperCase()+((e.firstName||'')[0]||'').toUpperCase();
-    const now=new Date(); const y=now.getFullYear();
-    // Count this year's absences
+  const now=new Date(); const y=now.getFullYear();
+  let rows='';
+  filtered.forEach(e=>{
     let vacUsed=0,pnDays=0;
     Object.entries(state.attendance||{}).forEach(([key,entry])=>{
       const seg=key.split('_');
@@ -1461,41 +1458,52 @@ function renderEmployees() {
     const vacAllowance=e.vacationDays||20;
     const vacRemain=vacAllowance-vacUsed;
     const vacColor=vacRemain<0?'var(--red)':vacRemain<=3?'var(--amber)':'var(--green)';
-    return `<div class="emp-card">
-      <div class="emp-header">
-        <div class="emp-avatar" style="background:${color}">${initials}</div>
-        <div style="flex:1;min-width:0">
-          <div class="emp-name">${e.lastName} ${e.firstName}</div>
-          ${e.position?`<div class="emp-pos">💼 ${e.position}</div>`:''}
-        </div>
-        ${e.employeeId?`<span class="badge badge-blue">${e.employeeId}</span>`:''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:.8rem;color:var(--slate);margin-top:4px">
-        ${e.phone?`<div style="display:flex;align-items:center;gap:6px">📞 <a href="tel:${e.phone}" style="color:var(--blue);text-decoration:none;font-weight:500">${e.phone}</a></div>`:''}
-        ${e.email?`<div style="display:flex;align-items:center;gap:6px;min-width:0">✉️ <a href="mailto:${e.email}" style="color:var(--blue);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.email}</a></div>`:''}
-        ${e.note?`<div style="color:var(--text-muted);font-style:italic">📝 ${e.note}</div>`:''}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--slate-border)">
-        <div style="flex:1;text-align:center">
-          <div style="font-size:.68rem;color:var(--slate);margin-bottom:1px">Dovolenka ${y}</div>
-          <div style="font-weight:700;font-size:.9rem;color:${vacColor}">${vacUsed}/${vacAllowance}</div>
-          <div style="font-size:.68rem;color:${vacColor}">${vacRemain>=0?'zostatok '+vacRemain:'prekročené '+(Math.abs(vacRemain))}</div>
-        </div>
-        <div style="flex:1;text-align:center">
-          <div style="font-size:.68rem;color:var(--slate);margin-bottom:1px">PN ${y}</div>
-          <div style="font-weight:700;font-size:.9rem;color:${pnDays>0?'var(--red)':'var(--green)'}'">${pnDays} dní</div>
-        </div>
-        <div style="flex:1;text-align:center">
-          <div style="font-size:.68rem;color:var(--slate);margin-bottom:1px">Nárok/rok</div>
-          <div style="font-weight:700;font-size:.9rem;color:var(--slate)">${vacAllowance} dní</div>
-        </div>
-      </div>
-      <div class="emp-actions">
-        <button class="btn btn-secondary btn-sm" onclick="openEmpModal('${e.id}')">✏️ Upraviť</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">🗑 Odstrániť</button>
-      </div>
-    </div>`;
-  }).join('');
+    rows+=`<tr>
+      <td style="font-weight:600">${e.lastName||''} ${e.firstName||''}</td>
+      <td>${e.phone?`<a href="tel:${e.phone}" style="color:var(--blue);text-decoration:none">${e.phone}</a>`:''}</td>
+      <td style="text-align:center">
+        <input type="number" min="0" max="365" step="0.5" value="${vacAllowance}"
+          style="width:60px;text-align:center;border:1px solid var(--slate-border);border-radius:6px;padding:3px 6px;font-size:.82rem;background:var(--surface)"
+          onchange="updateVacationAllowance('${e.id}',this.value)"
+          title="Nárok na dovolenku (editovateľné)">
+      </td>
+      <td style="text-align:center;font-weight:600;color:${vacColor}">${vacRemain}</td>
+      <td style="text-align:center;color:var(--slate)">${vacUsed}</td>
+      <td style="text-align:center;color:${pnDays>0?'var(--red)':'var(--slate)'}">${pnDays}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="openEmpModal('${e.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">🗑</button>
+      </td>
+    </tr>`;
+  });
+  grid.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:.85rem">
+    <thead>
+      <tr style="border-bottom:2px solid var(--slate-border);color:var(--slate);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">
+        <th style="padding:8px 10px;text-align:left">Priezvisko Meno</th>
+        <th style="padding:8px 10px;text-align:left">Telefón</th>
+        <th style="padding:8px 10px;text-align:center">Nárok (dni)</th>
+        <th style="padding:8px 10px;text-align:center">Zostatok</th>
+        <th style="padding:8px 10px;text-align:center">Čerpané D</th>
+        <th style="padding:8px 10px;text-align:center">PN dni</th>
+        <th style="padding:8px 10px;text-align:right">Akcie</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+  grid.querySelectorAll('tbody tr').forEach(tr=>{
+    tr.style.borderBottom='1px solid var(--slate-border)';
+    tr.querySelectorAll('td').forEach(td=>td.style.padding='9px 10px');
+    tr.addEventListener('mouseenter',()=>tr.style.background='var(--slate-light)');
+    tr.addEventListener('mouseleave',()=>tr.style.background='');
+  });
+}
+
+function updateVacationAllowance(id, val) {
+  const emp = state.employees.find(e => e.id === id);
+  if (!emp) return;
+  emp.vacationDays = Math.max(0, parseFloat(val) || 0);
+  saveState();
+  renderEmployees();
 }
 
 let editingEmpId=null;

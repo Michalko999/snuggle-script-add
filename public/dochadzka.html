@@ -387,11 +387,11 @@
                 </div>
                 <div class="upcoming-filters" style="flex-wrap:wrap;gap:4px;margin-top:6px">
                   <button class="filter-chip active" data-filter="all" onclick="setUpcomingFilter('all',this)">Všetko</button>
-                  <button class="filter-chip chip-D" data-filter="D" onclick="setUpcomingFilter('D',this)">🏖 D</button>
-                  <button class="filter-chip chip-L" data-filter="L" onclick="setUpcomingFilter('L',this)">🏥 L</button>
-                  <button class="filter-chip chip-PN" data-filter="PN" onclick="setUpcomingFilter('PN',this)">🤒 PN</button>
-                  <button class="filter-chip chip-OČR" data-filter="OČR" onclick="setUpcomingFilter('OČR',this)">👶 OČR</button>
-                  <button class="filter-chip chip-LD" data-filter="LD" onclick="setUpcomingFilter('LD',this)">🏥🏖 L/D</button>
+                  <button class="filter-chip chip-D" data-filter="D" onclick="setUpcomingFilter('D',this)">D</button>
+                  <button class="filter-chip chip-L" data-filter="L" onclick="setUpcomingFilter('L',this)">L</button>
+                  <button class="filter-chip chip-PN" data-filter="PN" onclick="setUpcomingFilter('PN',this)">PN</button>
+                  <button class="filter-chip chip-OČR" data-filter="OČR" onclick="setUpcomingFilter('OČR',this)">OČR</button>
+                  <button class="filter-chip chip-LD" data-filter="LD" onclick="setUpcomingFilter('LD',this)">L/D</button>
                 </div>
               </div>
               <div class="events-list" id="events-list"></div>
@@ -2117,7 +2117,7 @@ function renderUpcomingEvents() {
     const dateRange = ev.endStr ? `${ev.startStr} – ${ev.endStr}` : ev.startStr;
     return `<div class="event-row">
       <div class="event-dot" style="background:${ev.cfg.dot}"></div>
-      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.icon} ${ev.cfg.label}</span>
+      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.label}</span>
       <span class="event-name">${ev.empName}</span>
       <span class="event-date">${dateRange}</span>
       ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
@@ -2182,7 +2182,7 @@ function renderTodayAbsences() {
   listEl.innerHTML = absent.map(ev => `
     <div class="event-row">
       <div class="event-dot" style="background:${ev.cfg.dot}"></div>
-      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.icon} ${ev.cfg.label}</span>
+      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.label}</span>
       <span class="event-name">${ev.empName}</span>
       ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
     </div>`).join('');

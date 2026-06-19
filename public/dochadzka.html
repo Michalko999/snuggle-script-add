@@ -706,6 +706,7 @@
 </div>
 <div class="backup-bar">
   <span>💾 Záloha dát:</span>
+  <button class="btn btn-secondary btn-sm" onclick="fillWorkingDays()">✔ Doplniť pracovné dni</button>
   <button class="btn btn-secondary btn-sm" onclick="exportBackup()">⬇ Exportovať JSON</button>
   <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-file').click()">⬆ Importovať JSON</button>
   <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackup(this)">
@@ -1655,6 +1656,33 @@ function exportNoiseExcel() {
   XLSX.utils.book_append_sheet(wb,ws,`Hluk ${MONTHS_SK[m-1]} ${y}`);
   XLSX.writeFile(wb,`hluk_${y}_${String(m).padStart(2,'0')}.xlsx`);
   toast('Excel príplatkov exportovaný','success');
+}
+
+// ==================== FILL WORKING DAYS ====================
+function fillWorkingDays() {
+  const now = new Date();
+  now.setHours(0,0,0,0);
+  if (!state.attendance) state.attendance = {};
+  let filled = 0;
+  // Scan from Jan 1 of current year up to and including today
+  const start = new Date(now.getFullYear(), 0, 1);
+  for (let cur = new Date(start); cur <= now; cur.setDate(cur.getDate() + 1)) {
+    const y = cur.getFullYear(), m = cur.getMonth() + 1, d = cur.getDate();
+    const holidays = getSlovakHolidays(y);
+    const { isWE, isHol } = getDayInfo(y, m, d, holidays);
+    if (isWE || isHol) continue;
+    sortedEmps().forEach(emp => {
+      const ak = attKey(emp.id, y, m, d);
+      if (!state.attendance[ak]) {
+        state.attendance[ak] = { type: 'P', hours: 7.5 };
+        filled++;
+      }
+    });
+  }
+  saveState();
+  renderMatrix();
+  renderUpcomingEvents();
+  toast(`Doplnených ${filled} pracovných dní`, 'success');
 }
 
 // ==================== BACKUP ====================

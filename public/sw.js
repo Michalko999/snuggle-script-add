@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moje-ulohy-v2';
+const CACHE_NAME = 'moje-ulohy-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -11,6 +11,17 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const existing = list.find(c => c.url.includes('snuggle-script-add') && 'focus' in c);
+      if (existing) return existing.focus();
+      return clients.openWindow('./');
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

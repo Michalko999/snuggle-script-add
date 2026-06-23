@@ -1015,11 +1015,11 @@ function renderMatrix() {
         const t=entry.type, h=entry.hours||7.5;
         if(t==='P'){totalH+=h;totalP++;}
         else if(t==='D')totalD++;
-        else if(t==='Dh'){totalH+=h/2;totalD+=0.5;}
+        else if(t==='Dh'){totalH+=h;totalD+=0.5;}
         else if(t==='PN')totalPN++;
         else if(t==='OČR')totalOCR++;
         else if(t==='L')totalL++;
-        else if(t==='Lh'){totalL+=0.5;}
+        else if(t==='Lh'){totalH+=h;totalL+=0.5;}
         else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
         const isDefault=!storedEntry&&t==='P';
         const chipClass=t==='OČR'?'s-OČR':`s-${t}`;
@@ -1154,7 +1154,7 @@ function saveRangeEntry() {
   const sel = document.querySelector('#range-status-grid .status-option.selected');
   if (!sel) { toast('Vyberte typ', 'error'); return; }
   const type = sel.id.replace('rso-', '');
-  const hours = type === 'P' ? 7.5 : 7.5;
+  const hours = (type==='P') ? 7.5 : (type==='Dh'||type==='Lh') ? 3.75 : 7.5;
   const note = document.getElementById('range-note').value.trim();
   const { empId, y, m, from, to } = rangeCtx;
   const holidays = getSlovakHolidays(y);
@@ -1220,7 +1220,7 @@ function saveDayEntry() {
   const sel=document.querySelector('.status-option.selected');
   if(!sel){toast('Vyberte typ','error');return;}
   const type=sel.id.replace('so-','');
-  const hours=type==='P'?+document.getElementById('hours-val').value:7.5;
+  const hours=(type==='P')?+document.getElementById('hours-val').value:(type==='Dh'||type==='Lh')?3.75:7.5;
   const ak=attKey(modalCtx.empId,modalCtx.y,modalCtx.m,modalCtx.d);
   pushUndo();
   state.attendance[ak]={type,hours,note:document.getElementById('day-note').value.trim()};
@@ -1595,8 +1595,8 @@ function exportCSV() {
       const t=entry.type,h=entry.hours||7.5;
       row+=','+(t==='P'?h:t);
       if(t==='P'){totalH+=h;totalP++;}else if(t==='D')totalD++;
-      else if(t==='Dh'){totalH+=h/2;totalD+=0.5;}else if(t==='PN')totalPN++;
-      else if(t==='OČR')totalOCR++;else if(t==='L')totalL++;else if(t==='Lh'){totalL+=0.5;}else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
+      else if(t==='Dh'){totalH+=h;totalD+=0.5;}else if(t==='PN')totalPN++;
+      else if(t==='OČR')totalOCR++;else if(t==='L')totalL++;else if(t==='Lh'){totalH+=h;totalL+=0.5;}else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
     }
     csv+=`${row},${totalH.toFixed(2)},${totalP},${totalD},${totalPN},${totalOCR},${totalL}\n`;
   });
@@ -1626,8 +1626,8 @@ function exportExcel() {
       const t=entry.type,h=entry.hours||7.5;
       row.push(t==='P'?h:t);
       if(t==='P'){totalH+=h;totalP++;}else if(t==='D')totalD++;
-      else if(t==='Dh'){totalH+=h/2;totalD+=0.5;}else if(t==='PN')totalPN++;
-      else if(t==='OČR')totalOCR++;else if(t==='L')totalL++;else if(t==='Lh'){totalL+=0.5;}else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
+      else if(t==='Dh'){totalH+=h;totalD+=0.5;}else if(t==='PN')totalPN++;
+      else if(t==='OČR')totalOCR++;else if(t==='L')totalL++;else if(t==='Lh'){totalH+=h;totalL+=0.5;}else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
     }
     rows.push([...row,totalH.toFixed(2),totalP,totalD,totalPN,totalOCR,totalL]);
   });

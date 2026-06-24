@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moje-ulohy-v4';
+const CACHE_NAME = 'moje-ulohy-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -11,6 +11,22 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+// Push z Cloudflare Workera — funguje aj keď je appka zatvorená
+self.addEventListener('push', (event) => {
+  let data = { title: 'Pripomienka', body: '' };
+  try { if (event.data) data = { ...data, ...event.data.json() }; }
+  catch { if (event.data) data.body = event.data.text(); }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Pripomienka', {
+      body: data.body || '',
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      tag: 'pripomienka',
+      renotify: true,
+    })
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

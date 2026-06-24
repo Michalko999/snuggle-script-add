@@ -28,13 +28,30 @@ const CATEGORY_STYLES = {
   "Iné":                   { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
 const PROXY_KEY = "anthropic-proxy-url";
 const SORT_MODE_KEY = "sort-by-category-v1";
 const REMINDERS_KEY = "reminders-v1";
+const PUSH_ENABLED_KEY = "push-enabled-v1";
+
+// Základná URL Cloudflare Workera (odvodená z AI proxy URL)
+function pushBase() {
+  const proxy = (localStorage.getItem(PROXY_KEY) ?? "").trim();
+  if (!proxy) return "";
+  try { return new URL(proxy).origin; } catch { return ""; }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
 
 function normalize(text) {
   return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").trim();
@@ -329,24 +346,48 @@ export default function App() {
   const [remInput, setRemInput] = useState("");
   const [remDatetime, setRemDatetime] = useState("");
   const [notifPermission, setNotifPermission] = useState("default");
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [remError, setRemError] = useState(null);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const undoTimer = useRef(null);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
   const remTimersRef = useRef({});
+  const pushSubRef = useRef(null);
+  const pushEnabledRef = useRef(false);
 
   const scheduleOne = useCallback((r) => {
     const diff = new Date(r.datetime).getTime() - Date.now();
     if (diff <= 0 || remTimersRef.current[r.id]) return;
     remTimersRef.current[r.id] = setTimeout(() => {
       delete remTimersRef.current[r.id];
-      showReminderNotification(r.text);
+      // Pri zapnutom push posiela upozornenie server (aj keď je appka zatvorená),
+      // takže lokálne nezobrazujeme, aby neprišlo dvakrát.
+      if (!pushEnabledRef.current) showReminderNotification(r.text);
       setReminders(prev => {
         const next = prev.map(x => x.id === r.id ? { ...x, fired: true } : x);
         localStorage.setItem(REMINDERS_KEY, JSON.stringify(next));
         return next;
       });
     }, diff);
+  }, []);
+
+  // Pošle aktuálny zoznam pripomienok + predplatné na Worker (KV)
+  const syncReminders = useCallback(async (list, sub) => {
+    const base = pushBase();
+    const subscription = sub || pushSubRef.current;
+    if (!base || !subscription) return;
+    const payload = list
+      .filter(r => !r.fired)
+      .map(r => ({ id: r.id, text: r.text, time: new Date(r.datetime).getTime() }));
+    try {
+      await fetch(`${base}/push/sync`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ subscription, reminders: payload }),
+      });
+    } catch { /* ticho — skúsi sa znova pri ďalšej zmene */ }
   }, []);
 
   useEffect(() => {
@@ -359,12 +400,16 @@ export default function App() {
 
     const perm = "Notification" in window ? Notification.permission : "denied";
     setNotifPermission(perm);
+    const pe = localStorage.getItem(PUSH_ENABLED_KEY) === "true";
+    setPushEnabled(pe);
+    pushEnabledRef.current = pe;
     const now = Date.now();
     const stored = loadJSON(REMINDERS_KEY, []);
     let needsSave = false;
     const initialized = stored.map(r => {
       if (!r.fired && new Date(r.datetime).getTime() <= now) {
-        showReminderNotification(r.text);
+        // Pri zapnutom push už zmeškané poslal server — lokálne neopakujeme.
+        if (!pe) showReminderNotification(r.text);
         needsSave = true;
         return { ...r, fired: true };
       }
@@ -389,6 +434,24 @@ export default function App() {
   useEffect(() => {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, hydrated]);
+
+  useEffect(() => { pushEnabledRef.current = pushEnabled; }, [pushEnabled]);
+
+  // Pri štarte (ak je push zapnutý) obnov predplatné a zosynchronizuj zoznam
+  useEffect(() => {
+    if (!hydrated || !pushEnabled) return;
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.ready
+      .then(reg => reg.pushManager.getSubscription())
+      .then(sub => { if (sub) { pushSubRef.current = sub; syncReminders(reminders, sub); } })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, pushEnabled]);
+
+  // Po každej zmene pripomienok pošli aktuálny zoznam na server
+  useEffect(() => {
+    if (hydrated && pushEnabled) syncReminders(reminders);
+  }, [reminders, hydrated, pushEnabled, syncReminders]);
 
   const saveApiKey = (key, proxyUrl = "") => {
     localStorage.setItem(APIKEY_KEY, key);
@@ -488,10 +551,69 @@ export default function App() {
     triggerUndo({ message: `Vymazaných ${entries.length} hotových`, entries });
   };
 
-  const requestNotif = async () => {
-    if (!("Notification" in window)) return;
-    const perm = await Notification.requestPermission();
-    setNotifPermission(perm);
+  // Zapne upozornenia na pozadí (Web Push cez Cloudflare Worker)
+  const enablePush = async () => {
+    setRemError(null);
+    const base = pushBase();
+    if (!base) { setRemError("Najprv nastav Cloudflare Worker URL v nastaveniach (ozubené koliesko hore)."); return; }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setRemError("Tento prehliadač nepodporuje upozornenia na pozadí.");
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const perm = await Notification.requestPermission();
+      setNotifPermission(perm);
+      if (perm !== "granted") { setRemError("Bez povolenia upozornení to nepôjde."); return; }
+
+      const keyRes = await fetch(`${base}/push/key`);
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) { setRemError("Worker nevrátil VAPID kľúč. Skontroluj nastavenie Workera (VAPID_PUBLIC)."); return; }
+
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+      pushSubRef.current = sub;
+      localStorage.setItem(PUSH_ENABLED_KEY, "true");
+      setPushEnabled(true);
+      pushEnabledRef.current = true;
+      await syncReminders(reminders, sub);
+    } catch (e) {
+      setRemError("Nepodarilo sa zapnúť upozornenia na pozadí: " + (e?.message ?? e));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const disablePush = async () => {
+    setRemError(null);
+    setPushBusy(true);
+    try {
+      const base = pushBase();
+      const sub = pushSubRef.current || (await navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).catch(() => null));
+      // odhlás na serveri (prázdny zoznam) aj v prehliadači
+      if (base && sub) {
+        try {
+          await fetch(`${base}/push/sync`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ subscription: sub, reminders: [] }),
+          });
+        } catch { /* ignore */ }
+      }
+      if (sub) { try { await sub.unsubscribe(); } catch { /* ignore */ } }
+      pushSubRef.current = null;
+      localStorage.removeItem(PUSH_ENABLED_KEY);
+      setPushEnabled(false);
+      pushEnabledRef.current = false;
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   const addReminder = () => {
@@ -752,17 +874,43 @@ export default function App() {
         {/* ── Pripomienky tab ── */}
         {activeTab === "pripomienky" && (
           <div>
-            {/* Notification permission warning */}
-            {notifPermission !== "granted" && (
-              <div style={{ marginBottom: "1rem", padding: "0.75rem 0.875rem", borderRadius: "0.75rem", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "0.78rem", lineHeight: 1.5 }}>
-                {notifPermission === "denied"
-                  ? "Upozornenia sú zablokované. Povoľ ich v nastaveniach prehliadača."
-                  : <>Upozornenia nie sú povolené.{" "}
-                    <button onClick={requestNotif} style={{ color: "#4f46e5", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontSize: "inherit" }}>
-                      Povoliť upozornenia
-                    </button>
-                  </>
-                }
+            {/* Upozornenia na pozadí (Web Push) */}
+            <div style={{ marginBottom: "1rem", padding: "0.75rem 0.875rem", borderRadius: "0.75rem", background: pushEnabled ? "#ecfdf5" : "#f8fafc", border: `1px solid ${pushEnabled ? "#a7f3d0" : "#e2e8f0"}` }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+                  <span style={{ color: pushEnabled ? "#059669" : "#94a3b8", display: "flex", flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  </span>
+                  <span style={{ fontSize: "0.8rem", fontWeight: 600, color: pushEnabled ? "#047857" : "#475569" }}>
+                    {pushEnabled ? "Upozornenia na pozadí sú zapnuté" : "Upozornenia na pozadí"}
+                  </span>
+                </div>
+                <button
+                  onClick={pushEnabled ? disablePush : enablePush}
+                  disabled={pushBusy}
+                  style={{
+                    flexShrink: 0, border: "none", borderRadius: "0.5rem",
+                    padding: "0.4rem 0.8rem", fontWeight: 600, fontSize: "0.75rem",
+                    cursor: pushBusy ? "wait" : "pointer", opacity: pushBusy ? 0.6 : 1,
+                    background: pushEnabled ? "#fff" : "#4f46e5",
+                    color: pushEnabled ? "#64748b" : "#fff",
+                    boxShadow: pushEnabled ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                  }}
+                >
+                  {pushBusy ? "Moment…" : pushEnabled ? "Vypnúť" : "Zapnúť"}
+                </button>
+              </div>
+              {!pushEnabled && (
+                <p style={{ fontSize: "0.72rem", color: "#64748b", margin: 0, marginTop: "0.5rem", lineHeight: 1.5 }}>
+                  Po zapnutí ťa appka upozorní v presný čas, aj keď ju máš zatvorenú. Najlepšie funguje, ak appku pridáš na plochu (Inštalovať).
+                </p>
+              )}
+            </div>
+
+            {/* Chyba / blokované upozornenia */}
+            {(remError || notifPermission === "denied") && (
+              <div style={{ marginBottom: "1rem", padding: "0.6rem 0.875rem", borderRadius: "0.75rem", background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", fontSize: "0.78rem", lineHeight: 1.5 }}>
+                {remError || "Upozornenia sú zablokované. Povoľ ich v nastaveniach prehliadača."}
               </div>
             )}
 

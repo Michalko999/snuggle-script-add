@@ -28,7 +28,7 @@ const CATEGORY_STYLES = {
   "Iné":                   { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const APIKEY_KEY = "anthropic-api-key";
@@ -42,6 +42,22 @@ function normalize(text) {
 
 function loadJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+}
+
+// Zobrazí notifikáciu bezpečne. Na Androide/PWA je `new Notification()` zakázaný
+// (vyhodí výnimku), preto uprednostníme ServiceWorker. Nikdy nehádže výnimku,
+// aby pád notifikácie nezhodil celú appku (biela obrazovka).
+function showReminderNotification(text) {
+  try {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then(reg => reg.showNotification("Pripomienka", { body: text }))
+        .catch(() => { try { new Notification("Pripomienka", { body: text }); } catch { /* ignore */ } });
+    } else {
+      new Notification("Pripomienka", { body: text });
+    }
+  } catch { /* notifikácia nesmie nikdy zhodiť aplikáciu */ }
 }
 
 // ── Anthropic API helpers ────────────────────────────────────────
@@ -324,9 +340,7 @@ export default function App() {
     if (diff <= 0 || remTimersRef.current[r.id]) return;
     remTimersRef.current[r.id] = setTimeout(() => {
       delete remTimersRef.current[r.id];
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("Pripomienka", { body: r.text });
-      }
+      showReminderNotification(r.text);
       setReminders(prev => {
         const next = prev.map(x => x.id === r.id ? { ...x, fired: true } : x);
         localStorage.setItem(REMINDERS_KEY, JSON.stringify(next));
@@ -350,7 +364,7 @@ export default function App() {
     let needsSave = false;
     const initialized = stored.map(r => {
       if (!r.fired && new Date(r.datetime).getTime() <= now) {
-        if (perm === "granted") new Notification("Pripomienka", { body: r.text });
+        showReminderNotification(r.text);
         needsSave = true;
         return { ...r, fired: true };
       }

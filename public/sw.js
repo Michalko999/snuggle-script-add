@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moje-ulohy-v3';
+const CACHE_NAME = 'moje-ulohy-v4';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

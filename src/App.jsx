@@ -571,12 +571,17 @@ export default function App() {
       if (!publicKey) { setRemError("Worker nevrátil VAPID kľúč. Skontroluj nastavenie Workera (VAPID_PUBLIC)."); return; }
 
       const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
+      // Vždy odhlásiť starú subscription — staré VAPID kľúče spôsobujú "push service error"
+      const oldSub = await reg.pushManager.getSubscription();
+      if (oldSub) await oldSub.unsubscribe().catch(() => {});
+      let sub;
+      try {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         });
+      } catch (subErr) {
+        throw new Error(`pushManager.subscribe zlyhal: ${subErr?.message ?? subErr}. Skontroluj VAPID_PUBLIC v Cloudflare (musí byť presne: BMj8HJSvlYPOX41_PtdNzAYG-8sj9ySMLGSBtq9Jbs1Yt_aUWq7XncspGWMOD1o6iVfe5hDjTw2HctFgrNB3XKg)`);
       }
       pushSubRef.current = sub;
       localStorage.setItem(PUSH_ENABLED_KEY, "true");

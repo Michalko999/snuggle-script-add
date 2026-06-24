@@ -578,7 +578,7 @@ export default function App() {
       try {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
+          applicationServerKey: urlBase64ToUint8Array(publicKey.trim()),
         });
       } catch (subErr) {
         throw new Error(`pushManager.subscribe zlyhal: ${subErr?.message ?? subErr}. Skontroluj VAPID_PUBLIC v Cloudflare (musí byť presne: BMj8HJSvlYPOX41_PtdNzAYG-8sj9ySMLGSBtq9Jbs1Yt_aUWq7XncspGWMOD1o6iVfe5hDjTw2HctFgrNB3XKg)`);

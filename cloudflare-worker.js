@@ -6,7 +6,7 @@
 //        - VAPID_PUBLIC   (Text)   = verejný kľúč (application server key)
 //        - VAPID_SUBJECT  (Text)   = mailto:tvoj@email.sk
 //        - VAPID_PRIVATE  (Secret) = privátny JWK (jeden riadok)
-//   3. Settings → Bindings → KV Namespace: vytvor namespace a nabinduj ako  REMINDERS
+//   3. Settings → Bindings → KV Namespace: vytvor namespace a nabinduj ako  reminders
 //   4. Settings → Triggers → Cron Triggers: pridaj  * * * * *  (každú minútu)
 // ───────────────────────────────────────────────────────────────────
 
@@ -35,12 +35,12 @@ export default {
         const { subscription, reminders } = await request.json();
         if (!subscription?.endpoint) return json({ error: "missing subscription" }, 400);
         const key = "sub:" + (await sha256hex(subscription.endpoint));
-        const existing = await env.REMINDERS.get(key, "json");
+        const existing = await env.reminders.get(key, "json");
         const sentIds = new Set((existing?.reminders ?? []).filter(r => r.sent).map(r => r.id));
         const merged = (reminders ?? [])
           .filter(r => r && r.id && typeof r.time === "number")
           .map(r => ({ id: r.id, text: r.text ?? "", time: r.time, sent: sentIds.has(r.id) }));
-        await env.REMINDERS.put(key, JSON.stringify({ subscription, reminders: merged }));
+        await env.reminders.put(key, JSON.stringify({ subscription, reminders: merged }));
         return json({ ok: true, stored: merged.length });
       } catch (e) {
         return json({ error: String(e) }, 500);
@@ -73,10 +73,10 @@ export default {
 
 async function sendDueReminders(env) {
   const now = Date.now();
-  const list = await env.REMINDERS.list({ prefix: "sub:" });
+  const list = await env.reminders.list({ prefix: "sub:" });
   console.log(`[cron] found ${list.keys.length} subscription(s)`);
   for (const k of list.keys) {
-    const data = await env.REMINDERS.get(k.name, "json");
+    const data = await env.reminders.get(k.name, "json");
     if (!data?.subscription) continue;
     const due = (data.reminders ?? []).filter(r => !r.sent && r.time <= now);
     console.log(`[cron] ${k.name}: ${data.reminders?.length ?? 0} reminders, ${due.length} due`);
@@ -98,14 +98,14 @@ async function sendDueReminders(env) {
       }
     }
 
-    if (gone) { await env.REMINDERS.delete(k.name); continue; }
+    if (gone) { await env.reminders.delete(k.name); continue; }
 
     // upraď staré (viac ako deň po termíne)
     const before = (data.reminders ?? []).length;
     data.reminders = (data.reminders ?? []).filter(r => r.time > now - 86400000);
     if (changed || data.reminders.length !== before) {
-      if (data.reminders.length) await env.REMINDERS.put(k.name, JSON.stringify(data));
-      else await env.REMINDERS.delete(k.name);
+      if (data.reminders.length) await env.reminders.put(k.name, JSON.stringify(data));
+      else await env.reminders.delete(k.name);
     }
   }
 }

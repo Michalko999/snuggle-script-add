@@ -74,20 +74,27 @@ export default {
 async function sendDueReminders(env) {
   const now = Date.now();
   const list = await env.REMINDERS.list({ prefix: "sub:" });
+  console.log(`[cron] found ${list.keys.length} subscription(s)`);
   for (const k of list.keys) {
     const data = await env.REMINDERS.get(k.name, "json");
     if (!data?.subscription) continue;
+    const due = (data.reminders ?? []).filter(r => !r.sent && r.time <= now);
+    console.log(`[cron] ${k.name}: ${data.reminders?.length ?? 0} reminders, ${due.length} due`);
     let changed = false;
     let gone = false;
 
     for (const r of data.reminders ?? []) {
       if (!r.sent && r.time <= now) {
+        let sent = false;
         try {
           const status = await sendPush(env, data.subscription, "Pripomienka", r.text);
-          if (status === 404 || status === 410) gone = true;
-        } catch (e) { /* skús nabudúce */ }
-        r.sent = true;
-        changed = true;
+          console.log(`[cron] push status=${status} for reminder "${r.text}"`);
+          if (status === 404 || status === 410) { gone = true; sent = true; }
+          else if (status >= 200 && status < 300) sent = true;
+        } catch (e) {
+          console.error(`[cron] sendPush error: ${e?.message ?? e}`);
+        }
+        if (sent) { r.sent = true; changed = true; }
       }
     }
 

@@ -7,7 +7,7 @@
 //        - VAPID_SUBJECT  (Text)   = mailto:tvoj@email.sk
 //        - VAPID_PRIVATE  (Secret) = privátny JWK (jeden riadok)
 //   3. Settings → Bindings → KV Namespace: vytvor namespace a nabinduj ako  reminders
-//   4. Settings → Triggers → Cron Triggers: pridaj  * * * * *  (každú minútu)
+//   4. Settings → Triggers → Cron Triggers: pridaj  */3 * * * *  (každé 3 minúty)
 // ───────────────────────────────────────────────────────────────────
 
 const CORS = {
@@ -63,7 +63,7 @@ export default {
     return new Response(body, { status: response.status, headers: { ...CORS, "content-type": "application/json" } });
   },
 
-  // ── Cron: každú minútu pošli dozreté pripomienky ──────────────────
+  // ── Cron: každé 3 minúty pošli dozreté pripomienky ────────────────
   async scheduled(event, env, ctx) {
     ctx.waitUntil(sendDueReminders(env));
   },

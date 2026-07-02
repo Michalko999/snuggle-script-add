@@ -77,6 +77,10 @@
   .s-L{background:#A5F3FC;color:#164E63}
   .s-Lh{background:#67E8F9;color:#0C4A6E}
   .s-LD{background:#DDD6FE;color:#3B0764}
+  .s-D-pending{background:repeating-linear-gradient(45deg,#BBFBD0,#BBFBD0 4px,#ffffff 4px,#ffffff 8px);color:#14532D;outline:1.5px dashed #16A34A;outline-offset:-2px}
+  .s-Dh-pending{background:repeating-linear-gradient(45deg,#BBF7D0,#BBF7D0 4px,#ffffff 4px,#ffffff 8px);color:#14532D;outline:1.5px dashed #16A34A;outline-offset:-2px}
+  .s-D-rejected{background:#FEE2E2;color:#7F1D1D;text-decoration:line-through}
+  .s-Dh-rejected{background:#FEE2E2;color:#7F1D1D;text-decoration:line-through}
   .s-empty{background:transparent}
   .s-weekend{background:#E2E8F0;color:#475569}
   .s-holiday{background:#FED7AA;color:#7C2D12}
@@ -227,6 +231,20 @@
   .filter-chip.chip-OČR.active{ border-color: var(--amber); background: var(--amber-bg); color: #78350F; }
   .filter-chip.chip-LD.active { border-color: #7C3AED; background: #EDE9FE; color: #3B0764; }
   .events-list { display: flex; flex-direction: column; gap: 6px; }
+  /* Pending approvals panel */
+  .approval-item { display:grid; grid-template-columns:8px auto 1fr; grid-template-rows:auto auto auto; column-gap:6px; row-gap:3px; padding:8px 10px; border-radius:var(--radius); border:1px solid #FDE68A; background:#FFFBEB; }
+  .approval-item-dot { grid-column:1; grid-row:1/4; align-self:center; width:8px; height:8px; border-radius:50%; background:#D97706; flex-shrink:0; }
+  .approval-item-type { grid-column:2; grid-row:1; display:inline-flex; align-items:center; padding:1px 6px; border-radius:4px; font-size:.7rem; font-weight:700; background:#FEF3C7; color:#78350F; }
+  .approval-item-date { grid-column:3; grid-row:1; font-size:.72rem; color:var(--text-muted); align-self:center; text-align:right; }
+  .approval-item-name { grid-column:2/-1; grid-row:2; font-size:.8rem; font-weight:600; color:var(--text); }
+  .approval-item-actions { grid-column:2/-1; grid-row:3; display:flex; gap:4px; margin-top:2px; }
+  .btn-approve { background:#DCFCE7; color:#14532D; border:1px solid #86EFAC; padding:3px 8px; font-size:.72rem; border-radius:5px; cursor:pointer; font-family:'Inter',sans-serif; font-weight:600; }
+  .btn-approve:hover { background:#BBF7D0; }
+  .btn-reject { background:#FEE2E2; color:#7F1D1D; border:1px solid #FCA5A5; padding:3px 8px; font-size:.72rem; border-radius:5px; cursor:pointer; font-family:'Inter',sans-serif; font-weight:600; }
+  .btn-reject:hover { background:#FECACA; }
+  /* Modal approval row */
+  .approval-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .approval-status-badge { font-size:.8rem; font-weight:600; padding:3px 8px; border-radius:5px; }
   .event-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: var(--radius); border: 1px solid var(--slate-border); background: var(--white); font-size: .82rem; transition: box-shadow .15s; }
   .event-row:hover { box-shadow: var(--shadow-md); }
   .event-badge { font-weight: 700; font-size: .72rem; padding: 3px 8px; border-radius: 4px; white-space: nowrap; min-width: 36px; text-align: center; }
@@ -361,8 +379,21 @@
     <section id="sec-matrix" class="section active">
       <div class="matrix-layout">
 
-        <!-- Left sidebar: today absences & upcoming events -->
+        <!-- Left sidebar: pending approvals, today absences & upcoming events -->
         <div class="left-sidebar">
+          <!-- Pending vacation approvals (hidden when empty) -->
+          <div class="card" id="approvals-card" style="display:none">
+            <div style="padding:12px 14px">
+              <div class="upcoming-header">
+                <div class="upcoming-title" style="color:#D97706">
+                  ⏳ Čakajúce schválenia
+                  <span class="badge" style="background:#FEF3C7;color:#78350F" id="approvals-count">0</span>
+                </div>
+              </div>
+              <div class="events-list" id="approvals-list" style="margin-top:8px"></div>
+            </div>
+          </div>
+
           <div class="card">
             <div class="today-panel">
               <div class="upcoming-header">
@@ -598,6 +629,15 @@
       <div class="form-group">
         <div class="form-label">Poznámka <span style="font-weight:400;color:var(--text-muted)">(nepovinná)</span></div>
         <input type="text" id="day-note" placeholder="napr. PN od nemocnice, OČR - dieťa..." maxlength="80">
+      </div>
+      <div class="form-group" id="approval-section" style="display:none;border-top:1px solid var(--slate-border);padding-top:10px">
+        <div class="form-label">Schválenie dovolenky</div>
+        <div id="approval-status-display" style="margin-bottom:6px"></div>
+        <div class="approval-row">
+          <button class="btn-approve" id="btn-modal-approve" onclick="setApprovalFromModal(true)">✅ Schváliť</button>
+          <button class="btn-reject" id="btn-modal-reject" onclick="setApprovalFromModal(false)">❌ Zamietnuť</button>
+          <button class="btn btn-secondary btn-sm" onclick="setApprovalFromModal(null)" style="padding:3px 8px;font-size:.72rem">↩ Reset</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1022,7 +1062,11 @@ function renderMatrix() {
         else if(t==='Lh'){totalH+=h;totalL+=0.5;}
         else if(t==='LD'){totalD+=0.5;totalL+=0.5;}
         const isDefault=!storedEntry&&t==='P';
-        const chipClass=t==='OČR'?'s-OČR':`s-${t}`;
+        const isVacType = t==='D'||t==='Dh';
+        const chipClass = t==='OČR' ? 's-OČR'
+          : isVacType && storedEntry && storedEntry.approved===false ? `s-${t}-rejected`
+          : isVacType && storedEntry && storedEntry.approved!==true ? `s-${t}-pending`
+          : `s-${t}`;
         const label=t==='P'?`${h}h`:STATUS_DISPLAY[t]||t;
         const noteText = (storedEntry&&storedEntry.note) ? (storedEntry.note||'').replace(/[<>"'&]/g, ch=>({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;'}[ch])) : '';
         const hasNote = noteText ? ' has-note' : '';
@@ -1038,6 +1082,7 @@ function renderMatrix() {
   table.innerHTML=html;
   renderUpcomingEvents();
   renderTodayAbsences();
+  renderPendingApprovals();
 }
 
 // ==================== DRAG & SHIFT-CLICK MULTI-SELECT ====================
@@ -1205,6 +1250,11 @@ function openDayModal(empId,y,m,d,empName) {
   });
   document.getElementById('status-grid').innerHTML=grid;
   toggleHoursGroup(entry.type);
+  // Show approval section for vacation types
+  const isVac = entry.type==='D'||entry.type==='Dh';
+  const approvalSec = document.getElementById('approval-section');
+  approvalSec.style.display = isVac ? '' : 'none';
+  if (isVac) updateModalApprovalStatus(entry.approved !== undefined ? entry.approved : null);
   document.getElementById('day-modal').classList.add('open');
 }
 
@@ -1212,6 +1262,9 @@ function selectStatus(key) {
   document.querySelectorAll('.status-option').forEach(el=>el.classList.remove('selected'));
   document.getElementById('so-'+key).classList.add('selected');
   toggleHoursGroup(key);
+  // Toggle approval section based on selected type
+  const isVac = key==='D'||key==='Dh';
+  document.getElementById('approval-section').style.display = isVac ? '' : 'none';
 }
 function toggleHoursGroup(type) {
   document.getElementById('hours-group').style.display=type==='P'?'':'none';
@@ -1223,7 +1276,19 @@ function saveDayEntry() {
   const hours=(type==='P')?+document.getElementById('hours-val').value:(type==='Dh'||type==='Lh')?3.75:7.5;
   const ak=attKey(modalCtx.empId,modalCtx.y,modalCtx.m,modalCtx.d);
   pushUndo();
-  state.attendance[ak]={type,hours,note:document.getElementById('day-note').value.trim()};
+  const existingEntry = state.attendance[ak];
+  const note = document.getElementById('day-note').value.trim();
+  const isVac = type==='D'||type==='Dh';
+  let approved = undefined;
+  if (isVac) {
+    // Preserve approval if same vacation type; reset to pending (null) if type changed
+    if (existingEntry && (existingEntry.type===type) && existingEntry.approved !== undefined) {
+      approved = existingEntry.approved;
+    } else {
+      approved = null; // new or changed vacation → pending
+    }
+  }
+  state.attendance[ak] = isVac ? {type,hours,note,approved} : {type,hours,note};
   saveState(); closeModal('day-modal'); renderMatrix(); toast('Uložené','success');
 }
 function clearDayEntry() {
@@ -2101,6 +2166,7 @@ function renderUpcomingEvents() {
         cfg,
         note: entry.note || '',
         hours: entry.hours || 7.5,
+        approved: entry.approved,
         dateStr: `${String(day).padStart(2,'0')}.${String(mo).padStart(2,'0')}.${y}`,
       });
     });
@@ -2136,7 +2202,7 @@ function renderUpcomingEvents() {
     const daysUntil = Math.round((ev.date - today) / 86400000);
     const daysLabel = daysUntil === 0 ? 'dnes' : daysUntil === 1 ? 'zajtra' : `za ${daysUntil} dní`;
 
-    grouped.push({ ...ev, endStr, daysUntil, daysLabel, startStr });
+    grouped.push({ ...ev, endStr, daysUntil, daysLabel, startStr, approved: ev.approved });
   });
 
   // Sort by date then name
@@ -2151,10 +2217,16 @@ function renderUpcomingEvents() {
 
   listEl.innerHTML = grouped.map(ev => {
     const dateRange = ev.endStr ? `${ev.startStr} – ${ev.endStr}` : ev.startStr;
+    const isVacEv = ev.type === 'D' || ev.type === 'Dh';
+    const approvalBadge = isVacEv
+      ? (ev.approved === true ? '<span style="font-size:.65rem;font-weight:700;color:#14532D;background:#DCFCE7;padding:1px 5px;border-radius:3px">✅</span>'
+        : ev.approved === false ? '<span style="font-size:.65rem;font-weight:700;color:#7F1D1D;background:#FEE2E2;padding:1px 5px;border-radius:3px">❌</span>'
+        : '<span style="font-size:.65rem;font-weight:700;color:#78350F;background:#FEF3C7;padding:1px 5px;border-radius:3px">⏳</span>')
+      : '';
     return `<div class="event-row">
       <div class="event-dot" style="background:${ev.cfg.dot}"></div>
-      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.label}</span>
-      <span class="event-name">${ev.empName}</span>
+      <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.icon} ${ev.cfg.label}</span>
+      <span class="event-name">${ev.empName}${approvalBadge ? ' ' + approvalBadge : ''}</span>
       <span class="event-date">${dateRange}</span>
       ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
       <span class="event-days">${ev.daysLabel}</span>
@@ -2254,6 +2326,7 @@ function renderTodayAbsences() {
 renderMatrix();
 renderUpcomingEvents();
 renderTodayAbsences();
+renderPendingApprovals();
 renderEmployees();
 renderNoiseEmployeeTags();
 
@@ -2266,6 +2339,83 @@ cloudLoad().then(() => {
   renderNoise();
   renderNoiseEmployeeTags();
 });
+
+// ==================== VACATION APPROVAL ====================
+
+function renderPendingApprovals() {
+  const list = document.getElementById('approvals-list');
+  const card = document.getElementById('approvals-card');
+  const countEl = document.getElementById('approvals-count');
+  if (!list || !card) return;
+
+  const pending = [];
+  Object.entries(state.attendance || {}).forEach(([ak, entry]) => {
+    if ((entry.type === 'D' || entry.type === 'Dh') && entry.approved !== true && entry.approved !== false) {
+      const match = ak.match(/^(.+)_(\d{4})_(\d{2})_(\d{2})$/);
+      if (!match) return;
+      const empId = match[1], y = +match[2], mo = +match[3], dd = +match[4];
+      const emp = state.employees.find(e => e.id === empId);
+      if (!emp) return;
+      pending.push({ ak, empId, empName: `${emp.lastName} ${emp.firstName}`, date: new Date(y, mo-1, dd), type: entry.type, note: entry.note || '' });
+    }
+  });
+  pending.sort((a, b) => a.date - b.date);
+
+  const count = pending.length;
+  countEl.textContent = count;
+  card.style.display = count ? '' : 'none';
+  if (!count) { list.innerHTML = ''; return; }
+
+  list.innerHTML = pending.map(p => {
+    const d = p.date;
+    const typeLabel = p.type === 'Dh' ? '½D' : 'D';
+    const dateStr = `${d.getDate()}. ${MONTHS_SK[d.getMonth()]} ${d.getFullYear()}`;
+    const noteHtml = p.note ? `<div style="grid-column:2/-1;grid-row:3;font-size:.72rem;color:var(--text-muted);font-style:italic">${p.note}</div>` : '';
+    return `<div class="approval-item">
+      <div class="approval-item-dot"></div>
+      <span class="approval-item-type">${typeLabel}</span>
+      <span class="approval-item-date">${dateStr}</span>
+      <span class="approval-item-name">${p.empName}</span>
+      ${noteHtml}
+      <div class="approval-item-actions">
+        <button class="btn-approve" onclick="quickApprove('${p.ak}',true)">✅ Schváliť</button>
+        <button class="btn-reject" onclick="quickApprove('${p.ak}',false)">❌ Zamietnuť</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function quickApprove(ak, approved) {
+  if (!state.attendance[ak]) return;
+  state.attendance[ak].approved = approved;
+  saveState(); renderMatrix();
+  toast(approved ? 'Dovolenka schválená ✅' : 'Dovolenka zamietnutá ❌', approved ? 'success' : 'error');
+}
+
+function setApprovalFromModal(approved) {
+  const ak = attKey(modalCtx.empId, modalCtx.y, modalCtx.m, modalCtx.d);
+  if (!state.attendance[ak]) return;
+  state.attendance[ak].approved = approved;
+  updateModalApprovalStatus(approved);
+  saveState(); renderMatrix();
+  toast(approved === true ? 'Dovolenka schválená ✅' : approved === false ? 'Dovolenka zamietnutá ❌' : 'Schválenie resetované', approved === true ? 'success' : approved === false ? 'error' : '');
+}
+
+function updateModalApprovalStatus(approved) {
+  const statusEl = document.getElementById('approval-status-display');
+  const approveBtn = document.getElementById('btn-modal-approve');
+  const rejectBtn = document.getElementById('btn-modal-reject');
+  if (approved === true) {
+    statusEl.innerHTML = '<span class="approval-status-badge" style="background:#DCFCE7;color:#14532D">✅ Schválená</span>';
+    approveBtn.disabled = true; rejectBtn.disabled = false;
+  } else if (approved === false) {
+    statusEl.innerHTML = '<span class="approval-status-badge" style="background:#FEE2E2;color:#7F1D1D">❌ Zamietnutá</span>';
+    approveBtn.disabled = false; rejectBtn.disabled = true;
+  } else {
+    statusEl.innerHTML = '<span class="approval-status-badge" style="background:#FEF3C7;color:#78350F">⏳ Čaká na schválenie</span>';
+    approveBtn.disabled = false; rejectBtn.disabled = false;
+  }
+}
 </script>
 <div id="toast" class="toast"></div>
 <div id="float-tip"></div>

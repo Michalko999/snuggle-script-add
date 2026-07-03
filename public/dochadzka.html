@@ -384,17 +384,10 @@
   .spr-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
   .spr-sum-chip{background:var(--slate-light);border:1px solid var(--slate-border);border-radius:var(--radius);padding:8px 14px;font-size:.8rem;color:var(--slate)}
   .spr-sum-chip strong{display:block;font-size:1.05rem;color:var(--text);font-weight:700}
-  .mat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
-  .mat-card{border:1px solid var(--slate-border);border-radius:var(--radius-lg);padding:14px;background:var(--white);display:flex;flex-direction:column;gap:8px;transition:box-shadow .15s}
-  .mat-card:hover{box-shadow:var(--shadow-md)}
-  .mat-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-  .mat-card-title{font-weight:700;font-size:.9rem;color:var(--text)}
-  .mat-card-vykres{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:var(--blue);font-weight:600}
   .mat-postup-badge{background:var(--teal-bg);color:var(--teal);font-size:.7rem;font-weight:700;border-radius:10px;padding:2px 8px;white-space:nowrap}
   .mat-komp-list{display:flex;flex-direction:column;gap:3px;font-size:.76rem;border-top:1px dashed var(--slate-border);padding-top:8px}
   .mat-komp-row{display:flex;justify-content:space-between;gap:8px;color:var(--slate)}
   .mat-komp-row .kv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;color:var(--text-muted)}
-  .mat-card-actions{display:flex;gap:6px;margin-top:auto;padding-top:6px}
   .spr-komp-preview{border:1px solid var(--slate-border);border-radius:var(--radius);background:var(--slate-light);padding:10px 12px;font-size:.78rem;display:flex;flex-direction:column;gap:4px;max-height:170px;overflow-y:auto}
   .spr-komp-preview .mat-komp-row{color:var(--text)}
   .mat-komp-input-row{display:grid;grid-template-columns:24px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px}
@@ -402,7 +395,6 @@
   @media (max-width:768px){
     .spr-table{font-size:.74rem}
     .spr-table th,.spr-table td{padding:6px 6px}
-    .mat-grid{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -761,8 +753,18 @@
             </div>
           </div>
           <div class="card-body">
-            <p class="text-sm text-muted" style="margin-bottom:12px">Každý materiál definuje výrobok (číslo výkresu + názov dielca) a jeho vstupujúce komponenty. Pri vytváraní sprievodky sa komponenty doplnia automaticky.</p>
-            <div class="mat-grid" id="mat-grid"></div>
+            <p class="text-sm text-muted" style="margin-bottom:12px">Každý materiál definuje výrobok (číslo výkresu + názov dielca) a jeho vstupujúce komponenty. Kliknutím na riadok zobrazíš komponenty; pri vytváraní sprievodky sa doplnia automaticky.</p>
+            <div class="matrix-wrap">
+              <table class="spr-table" id="mat-table">
+                <thead>
+                  <tr>
+                    <th style="width:24px"></th><th>Číslo výkresu</th><th>Názov dielca</th><th>Č. postupu</th>
+                    <th>Komponenty</th><th>Zapísal</th><th style="width:170px">Akcie</th>
+                  </tr>
+                </thead>
+                <tbody id="mat-tbody"></tbody>
+              </table>
+            </div>
             <div id="mat-empty" class="text-muted text-sm" style="display:none;padding:20px 0">Žiadne materiály v katalógu.</div>
           </div>
         </div>
@@ -2837,8 +2839,8 @@ function deleteSprievodka(id) {
 
 // ---------- Katalóg materiálov ----------
 function renderMaterialy() {
-  const grid = document.getElementById('mat-grid');
-  if (!grid) return;
+  const tbody = document.getElementById('mat-tbody');
+  if (!tbody) return;
   ensureSprSeed();
   const q = (document.getElementById('mat-search').value || '').toLowerCase().trim();
   let list = sortedMats();
@@ -2846,25 +2848,40 @@ function renderMaterialy() {
     [m.vykres, m.nazov, m.postup, ...(m.komponenty || []).flatMap(k => [k.nazov, k.vykres])].some(v => (v || '').toLowerCase().includes(q)));
 
   document.getElementById('mat-empty').style.display = list.length ? 'none' : '';
-  grid.innerHTML = list.map(m => `
-    <div class="mat-card">
-      <div class="mat-card-head">
-        <div>
-          <div class="mat-card-vykres">${sprEsc(m.vykres)}</div>
-          <div class="mat-card-title">${sprEsc(m.nazov)}</div>
-        </div>
-        ${m.postup ? `<span class="mat-postup-badge">${sprEsc(m.postup)}</span>` : ''}
-      </div>
-      <div class="mat-komp-list">
-        ${(m.komponenty || []).map((k, i) => `<div class="mat-komp-row"><span>${i + 1}. ${sprEsc(k.nazov)}</span><span class="kv">${sprEsc(k.vykres)}</span></div>`).join('') || '<span class="text-muted">Bez komponentov</span>'}
-      </div>
-      ${m.zapisal ? `<div class="text-sm text-muted">✍️ ${sprEsc(m.zapisal)}</div>` : ''}
-      <div class="mat-card-actions">
-        <button class="btn btn-primary btn-sm" onclick="openSprModal(null,'${m.id}')">📋 Sprievodka</button>
-        <button class="btn btn-secondary btn-sm" onclick="openMatModal('${m.id}')">✏️ Upraviť</button>
+  tbody.innerHTML = list.map(m => {
+    const komp = Array.isArray(m.komponenty) ? m.komponenty : [];
+    const kompTip = komp.map(k => `${k.nazov} (${k.vykres})`).join('\n');
+    return `<tr style="cursor:pointer" onclick="toggleMatDetail('${m.id}')" title="Klikni pre zobrazenie komponentov">
+      <td style="text-align:center;color:var(--text-muted)" id="mat-chev-${m.id}">▸</td>
+      <td class="spr-vykres" style="font-weight:600;color:var(--blue)">${sprEsc(m.vykres)}</td>
+      <td>${sprEsc(m.nazov)}</td>
+      <td>${m.postup ? `<span class="mat-postup-badge">${sprEsc(m.postup)}</span>` : '—'}</td>
+      <td>${komp.length ? `<span class="spr-komp-badge" title="${sprEsc(kompTip)}">${komp.length}</span>` : '<span class="text-muted">—</span>'}</td>
+      <td>${sprEsc(m.zapisal || '—')}</td>
+      <td style="white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="btn btn-primary btn-sm" title="Nová sprievodka z tohto materiálu" onclick="openSprModal(null,'${m.id}')">📋</button>
+        <button class="btn btn-secondary btn-sm btn-icon" title="Upraviť" onclick="openMatModal('${m.id}')">✏️</button>
         <button class="btn btn-danger btn-sm btn-icon" title="Vymazať" onclick="deleteMaterial('${m.id}')">🗑</button>
-      </div>
-    </div>`).join('');
+      </td>
+    </tr>
+    <tr id="mat-detail-${m.id}" style="display:none">
+      <td style="background:var(--slate-light)"></td>
+      <td colspan="6" style="background:var(--slate-light);padding:10px 14px">
+        <div class="mat-komp-list" style="border-top:none;padding-top:0;max-width:520px">
+          ${komp.map((k, i) => `<div class="mat-komp-row"><span>${i + 1}. ${sprEsc(k.nazov)}</span><span class="kv">${sprEsc(k.vykres)}</span></div>`).join('') || '<span class="text-muted">Bez komponentov</span>'}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleMatDetail(id) {
+  const row = document.getElementById('mat-detail-' + id);
+  const chev = document.getElementById('mat-chev-' + id);
+  if (!row) return;
+  const open = row.style.display === 'none';
+  row.style.display = open ? '' : 'none';
+  if (chev) chev.textContent = open ? '▾' : '▸';
 }
 
 let matEditId = null;

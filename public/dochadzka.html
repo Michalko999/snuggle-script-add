@@ -368,6 +368,42 @@
   .noise-cell input[type=number]::-webkit-inner-spin-button,
   .noise-cell input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
   .noise-cell input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+
+  /* ==================== SPRIEVODKY ==================== */
+  .spr-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .spr-tab{padding:7px 16px;border-radius:20px;border:1px solid var(--slate-border);background:var(--white);font-family:'Inter',sans-serif;font-size:.85rem;font-weight:600;cursor:pointer;color:var(--slate);transition:all .15s}
+  .spr-tab:hover{background:var(--slate-light);color:var(--text)}
+  .spr-tab.active{background:var(--blue);border-color:var(--blue);color:var(--white)}
+  .spr-table{border-collapse:collapse;width:100%;font-size:.82rem}
+  .spr-table th{background:var(--slate-light);font-weight:600;color:var(--text-muted);padding:9px 10px;text-align:left;border-bottom:2px solid var(--slate-border);white-space:nowrap;position:sticky;top:0}
+  .spr-table td{padding:7px 10px;border-bottom:1px solid var(--slate-border);vertical-align:middle}
+  .spr-table tbody tr:hover{background:var(--blue-light)}
+  .spr-evc{font-weight:700;color:var(--blue);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .spr-vykres{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;white-space:nowrap;color:var(--text)}
+  .spr-komp-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;border-radius:10px;background:var(--purple-bg);color:var(--purple);font-size:.72rem;font-weight:700;padding:0 6px;cursor:help}
+  .spr-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .spr-sum-chip{background:var(--slate-light);border:1px solid var(--slate-border);border-radius:var(--radius);padding:8px 14px;font-size:.8rem;color:var(--slate)}
+  .spr-sum-chip strong{display:block;font-size:1.05rem;color:var(--text);font-weight:700}
+  .mat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+  .mat-card{border:1px solid var(--slate-border);border-radius:var(--radius-lg);padding:14px;background:var(--white);display:flex;flex-direction:column;gap:8px;transition:box-shadow .15s}
+  .mat-card:hover{box-shadow:var(--shadow-md)}
+  .mat-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .mat-card-title{font-weight:700;font-size:.9rem;color:var(--text)}
+  .mat-card-vykres{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:var(--blue);font-weight:600}
+  .mat-postup-badge{background:var(--teal-bg);color:var(--teal);font-size:.7rem;font-weight:700;border-radius:10px;padding:2px 8px;white-space:nowrap}
+  .mat-komp-list{display:flex;flex-direction:column;gap:3px;font-size:.76rem;border-top:1px dashed var(--slate-border);padding-top:8px}
+  .mat-komp-row{display:flex;justify-content:space-between;gap:8px;color:var(--slate)}
+  .mat-komp-row .kv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;color:var(--text-muted)}
+  .mat-card-actions{display:flex;gap:6px;margin-top:auto;padding-top:6px}
+  .spr-komp-preview{border:1px solid var(--slate-border);border-radius:var(--radius);background:var(--slate-light);padding:10px 12px;font-size:.78rem;display:flex;flex-direction:column;gap:4px;max-height:170px;overflow-y:auto}
+  .spr-komp-preview .mat-komp-row{color:var(--text)}
+  .mat-komp-input-row{display:grid;grid-template-columns:24px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px}
+  .mat-komp-input-row .idx{font-size:.75rem;font-weight:700;color:var(--text-muted);text-align:center}
+  @media (max-width:768px){
+    .spr-table{font-size:.74rem}
+    .spr-table th,.spr-table td{padding:6px 6px}
+    .mat-grid{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>
@@ -384,6 +420,7 @@
     <nav class="nav" id="main-nav">
       <button class="nav-btn active" onclick="showSection('matrix',this)">📊 Mesačná matica</button>
       <button class="nav-btn" id="nav-noise" style="display:none" onclick="showSection('noise',this)">🔊 Príplatky za hluk</button>
+      <button class="nav-btn" onclick="showSection('sprievodky',this)">📋 Sprievodky</button>
       <button class="nav-btn" onclick="showSection('stats',this)">📈 Štatistiky</button>
       <button class="nav-btn" onclick="showSection('employees',this)">👥 Zamestnanci</button>
       <button class="nav-btn" id="nav-users" style="display:none" onclick="showSection('users',this)">🔐 Účty</button>
@@ -667,6 +704,70 @@
         </div>
       </div>
     </section>
+
+    <!-- SPRIEVODKY -->
+    <section id="sec-sprievodky" class="section">
+      <div class="spr-tabs">
+        <button class="spr-tab active" id="spr-tab-btn-evidencia" onclick="showSprTab('evidencia',this)">📋 Evidencia sprievodok</button>
+        <button class="spr-tab" id="spr-tab-btn-materialy" onclick="showSprTab('materialy',this)">🧩 Vstupujúce materiály</button>
+      </div>
+
+      <!-- Evidencia sprievodok -->
+      <div id="spr-tab-evidencia">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Výrobné sprievodky — evidencia</div>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap">
+              <div class="search-bar">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" placeholder="Hľadať (evid. č., výkres, dielec, operátor)..." id="spr-search" oninput="renderSprievodky()">
+              </div>
+              <select id="spr-year-filter" onchange="renderSprievodky()"></select>
+              <button class="btn btn-secondary" onclick="document.getElementById('spr-xls-file').click()" title="Import evidencie a materiálov z pôvodného Excel súboru Sprievodky">📥 Import z Excelu</button>
+              <input type="file" id="spr-xls-file" accept=".xls,.xlsx" style="display:none" onchange="importSprievodkyXls(this)">
+              <button class="btn btn-secondary" onclick="exportSprievodkyExcel()" title="Export evidencie do Excelu">⬇ Export</button>
+              <button class="btn btn-primary" onclick="openSprModal()">+ Nová sprievodka</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="spr-summary" id="spr-summary"></div>
+            <div class="matrix-wrap">
+              <table class="spr-table" id="spr-table">
+                <thead>
+                  <tr>
+                    <th>Evid. číslo</th><th>Dátum prijatia</th><th>Číslo výkresu</th><th>Názov dielca</th>
+                    <th style="text-align:right">Počet ks</th><th>Komponenty</th><th>Operátor</th><th style="width:130px">Akcie</th>
+                  </tr>
+                </thead>
+                <tbody id="spr-tbody"></tbody>
+              </table>
+            </div>
+            <div id="spr-empty" class="text-muted text-sm" style="display:none;padding:20px 0">Žiadne sprievodky. Vytvor novú tlačidlom „+ Nová sprievodka" alebo importuj z Excelu.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Katalóg vstupujúcich materiálov -->
+      <div id="spr-tab-materialy" style="display:none">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Katalóg vstupujúcich materiálov (kusovníky)</div>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap">
+              <div class="search-bar">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" placeholder="Hľadať materiál..." id="mat-search" oninput="renderMaterialy()">
+              </div>
+              <button class="btn btn-primary" onclick="openMatModal()">+ Nový materiál</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="text-sm text-muted" style="margin-bottom:12px">Každý materiál definuje výrobok (číslo výkresu + názov dielca) a jeho vstupujúce komponenty. Pri vytváraní sprievodky sa komponenty doplnia automaticky.</p>
+            <div class="mat-grid" id="mat-grid"></div>
+            <div id="mat-empty" class="text-muted text-sm" style="display:none;padding:20px 0">Žiadne materiály v katalógu.</div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -807,6 +908,111 @@
     </div>
   </div>
 </div>
+<!-- Sprievodka modal -->
+<div class="modal-overlay" id="spr-modal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-header">
+      <div class="modal-title" id="spr-modal-title">📋 Nová výrobná sprievodka</div>
+      <button class="btn btn-secondary btn-sm btn-icon" onclick="closeModal('spr-modal')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">📅 Dátum prijatia</div>
+          <input type="date" id="spr-datum" onchange="onSprDatumChange()">
+        </div>
+        <div class="form-group">
+          <div class="form-label">🔢 Evid. číslo (kód)</div>
+          <input type="text" id="spr-evc" placeholder="napr. 22042026/01">
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">🧩 Materiál z katalógu <span style="font-weight:400;color:var(--text-muted)">(doplní výkres, dielec aj komponenty)</span></div>
+        <select id="spr-material" onchange="onSprMaterialChange()"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">📐 Číslo výkresu</div>
+          <input type="text" id="spr-vykres" placeholder="00 1859 000 043">
+        </div>
+        <div class="form-group">
+          <div class="form-label">🏷 Názov dielca</div>
+          <input type="text" id="spr-nazov" placeholder="zmontovaný predtlmič">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">🧱 Materiál <span style="font-weight:400;color:var(--text-muted)">(pole „MATERIÁL:" na formulári)</span></div>
+          <input type="text" id="spr-material-txt" placeholder="nepovinné">
+        </div>
+        <div class="form-group">
+          <div class="form-label">✏️ Zmena</div>
+          <input type="text" id="spr-zmena" placeholder="nepovinné">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">🔩 Počet kusov</div>
+          <input type="number" id="spr-pocet" min="0" step="1" placeholder="0">
+        </div>
+        <div class="form-group">
+          <div class="form-label">👤 Meno operátora</div>
+          <input type="text" id="spr-operator" list="spr-operator-list" placeholder="Priezvisko M.">
+          <datalist id="spr-operator-list"></datalist>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Vstupujúce komponenty</div>
+        <div class="spr-komp-preview" id="spr-komp-preview"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('spr-modal')">Zrušiť</button>
+      <button class="btn btn-primary" onclick="saveSprievodka()">Uložiť</button>
+    </div>
+  </div>
+</div>
+
+<!-- Materiál modal -->
+<div class="modal-overlay" id="mat-modal">
+  <div class="modal" style="width:640px;max-width:96vw">
+    <div class="modal-header">
+      <div class="modal-title" id="mat-modal-title">🧩 Nový materiál</div>
+      <button class="btn btn-secondary btn-sm btn-icon" onclick="closeModal('mat-modal')">✕</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">📐 Číslo výkresu výrobku</div>
+          <input type="text" id="mat-vykres" placeholder="00 1859 000 040">
+        </div>
+        <div class="form-group">
+          <div class="form-label">🏷 Názov dielca</div>
+          <input type="text" id="mat-nazov" placeholder="Zmontovaný predtlmič">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <div class="form-label">🗂 Č. postupu</div>
+          <input type="text" id="mat-postup" placeholder="napr. 138 S">
+        </div>
+        <div class="form-group">
+          <div class="form-label">✍️ Zapísal</div>
+          <input type="text" id="mat-zapisal" placeholder="Priezvisko M.">
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Vstupujúce komponenty <span style="font-weight:400;color:var(--text-muted)">(názov + číslo výkresu, max. 7)</span></div>
+        <div id="mat-komp-rows"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('mat-modal')">Zrušiť</button>
+      <button class="btn btn-primary" onclick="saveMaterial()">Uložiť</button>
+    </div>
+  </div>
+</div>
+
 <div class="backup-bar">
   <span>💾 Záloha dát:</span>
   <button class="btn btn-secondary btn-sm" onclick="fillWorkingDays()">✔ Doplniť pracovné dni</button>
@@ -956,6 +1162,7 @@ function startRealtimePolling() {
       _lastSavedHash = incoming;
       try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e) {}
       renderMatrix(); renderEmployees(); renderNoise(); renderNoiseEmployeeTags();
+      if (typeof renderSprievodky === 'function') { renderSprievodky(); renderMaterialy(); }
       if (!window.PUBLIC_VIEW && typeof validateSession === 'function') validateSession();
       setSyncStatus('synced');
       toast('Dáta aktualizované iným používateľom 🔄');
@@ -969,6 +1176,8 @@ function applyState(data) {
   state.noiseHours     = (data.noiseHours  && typeof data.noiseHours  === 'object' && !Array.isArray(data.noiseHours))  ? data.noiseHours  : {};
   state.noiseEmployees = Array.isArray(data.noiseEmployees) ? data.noiseEmployees : [];
   state.users          = Array.isArray(data.users) ? data.users : (state.users || []);
+  state.sprievodky     = Array.isArray(data.sprievodky) ? data.sprievodky : [];
+  state.materialy      = Array.isArray(data.materialy)  ? data.materialy  : [];
   guardState();
 }
 
@@ -986,6 +1195,8 @@ function guardState() {
   if (!Array.isArray(state.employees))      state.employees      = [];
   if (!Array.isArray(state.noiseEmployees)) state.noiseEmployees = [];
   if (!Array.isArray(state.users))          state.users          = [];
+  if (!Array.isArray(state.sprievodky))     state.sprievodky     = [];
+  if (!Array.isArray(state.materialy))      state.materialy      = [];
 }
 
 function loadState() { loadFromLocal(); } // fallback for undo/backup
@@ -1029,6 +1240,7 @@ function showSection(id, btn) {
   if (id==='employees') renderEmployees();
   if (id==='stats') renderStats();
   if (id==='users') renderUsers();
+  if (id==='sprievodky') { ensureSprSeed(); renderSprievodky(); renderMaterialy(); }
 }
 
 // ==================== HELPERS ====================
@@ -1472,18 +1684,20 @@ function updateNoiseTotals() {
 }
 
 // ==================== TOOLTIP ====================
-const floatTip = document.getElementById('float-tip');
+// #float-tip je v DOM až za týmto skriptom, preto ho treba nájsť až po načítaní
+let floatTip = document.getElementById('float-tip');
+document.addEventListener('DOMContentLoaded', () => { floatTip = floatTip || document.getElementById('float-tip'); });
 
 function showTip(e, td) {
   const note = td.dataset.note;
-  if (!note) return;
+  if (!note || !floatTip) return;
   floatTip.textContent = note;
   floatTip.style.display = 'block';
   positionTip(e);
 }
 
 function positionTip(e) {
-  if (floatTip.style.display === 'none') return;
+  if (!floatTip || floatTip.style.display === 'none') return;
   const tw = floatTip.offsetWidth;
   const th = floatTip.offsetHeight;
   let x = e.clientX - tw / 2;
@@ -1497,12 +1711,12 @@ function positionTip(e) {
 }
 
 function hideTip() {
-  floatTip.style.display = 'none';
+  if (floatTip) floatTip.style.display = 'none';
 }
 
 // Pohyb myši — tooltip sleduje kurzor
 document.addEventListener('mousemove', e => {
-  if (floatTip.style.display !== 'none') positionTip(e);
+  if (floatTip && floatTip.style.display !== 'none') positionTip(e);
 });
 
 // ==================== NOISE KEYBOARD NAV ====================
@@ -2362,6 +2576,538 @@ function renderTodayAbsences() {
       <span class="event-name">${ev.empName}</span>
       ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
     </div>`).join('');
+}
+
+// ==================== SPRIEVODKY ====================
+// Modul výrobných sprievodiek podľa Excel súboru "Sprievodky":
+//  - hárok2 vľavo  = evidencia sprievodiek (evid. číslo, dátum, výkres, dielec, počet, operátor)
+//  - hárok2 vpravo = katalóg vstupujúcich materiálov (výrobok + komponenty)
+//  - hárok1        = tlačový formulár VÝROBNÁ SPRIEVODKA (FORMULÁR Č. 048/1/1-95)
+const SPR_SEED_MATERIALY = [
+  {"vykres":"00 1847 000 477","nazov":"Zmontovaný predtlmič","postup":"361 S","zapisal":"Dolašová A.","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 001 410"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 196"},{"nazov": "Medzikotúč II.", "vykres": "00 1819 000 195"},{"nazov": "Plech krycí", "vykres": "00 1843 000 640"},{"nazov": "Fialová pružinka", "vykres": "00 1825 000 722"},{"nazov": "Biela pružinka", "vykres": "00 1825 001 330"},{"nazov": "Krúžok trecí", "vykres": "00 1831 000 854"}]},
+  {"vykres":"00 1859 000 040","nazov":"Zmontovaný predtlmič","postup":"138 S","zapisal":"Gažová M.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 019"},{"nazov": "pružina 2x", "vykres": "00 1830 888 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 042","nazov":"Zmontovaný predtlmič","postup":"139 S","zapisal":"Galgóciová D.","komponenty":[{"nazov": "plech lamely", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 280 800"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 949 000"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"},{"nazov": "plech krycí", "vykres": "00 1843 086 001"}]},
+  {"vykres":"00 1859 000 043","nazov":"Zmontovaný predtlmič","postup":"259 S","zapisal":"Horváthová E.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 275 001"},{"nazov": "pružina tlačná 2x", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 044","nazov":"Zmontovaný predtlmič","postup":"258 S","zapisal":"Kadlečíková B.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 110"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Žltá pružinka 2 x", "vykres": "00 1825 261 500"},{"nazov": "Bl.rúž.pružinka 2x", "vykres": "00 1830 099 200"}]},
+  {"vykres":"00 1859 000 045","nazov":"Zmontovaný predtlmič","postup":"241 S","zapisal":"Korchová K.","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 280 801"},{"nazov": "Krycí plech", "vykres": "00 1843 086 001"},{"nazov": "Biela pružinka 2x", "vykres": "00 1830 949 000"},{"nazov": "Žltá pružinka 2x", "vykres": "00 1825 261 500"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 047","nazov":"Zmontovaný predtlmič","postup":"242 S","zapisal":"Macošiarová Z.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 011"},{"nazov": "pružina tlačná", "vykres": "00 1830 099 200"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 048","nazov":"Zmontovaný predtlmič","postup":"293 S","zapisal":"Reisingerová A.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 281 701"},{"nazov": "sivá pružinka 2x", "vykres": "00 1825 168 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 051","nazov":"Zmontovaný predtlmič","postup":"305 S","zapisal":"Vitteková J.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 282 400"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "sivá pružinka", "vykres": "00 1825 168 000"}]},
+  {"vykres":"00 1859 000 052","nazov":"Zmontovaný predtlmič","postup":"310 S","zapisal":"Topolčanyová J.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 079 106"},{"nazov": "pružina tlačná 2x", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 053","nazov":"Zmontovaný predtlmič","postup":"324 S","zapisal":"Vojtechová E.","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 002"},{"nazov": "pružina tlačná", "vykres": "00 1830 853 000"},{"nazov": "Plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 055","nazov":"Zmontovaný predtlmič","postup":"402 S","zapisal":"Benechová A","komponenty":[{"nazov": "plech lamely", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 003"},{"nazov": "pružina 2x", "vykres": "00 1830 888 000"},{"nazov": "Biela pružinka 2x", "vykres": "00 1830 949 000"},{"nazov": "plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 102","nazov":"Zmontovaný predtlmič","postup":"407 S","zapisal":"Boledovičová Z.","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 079 103"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 116","nazov":"Zmontovaný predtlmič","postup":"406 S","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 059"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Starorúž. pružinka", "vykres": "00 1830 689 301"}]},
+  {"vykres":"00 1859 000 155","nazov":"Zmontovaný predtlmič","postup":"415 S","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 663 000"},{"nazov": "medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "pružina tlačná 4x", "vykres": "00 1830 853 000"},{"nazov": "Plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 188","nazov":"Zmontovaný predtlmič","postup":"408 S","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 093"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Starorúž. pružinka", "vykres": "00 1830 689 301"}]},
+  {"vykres":"00 1859 000 210","nazov":"Zmontovaný predtlmič","postup":"416 S","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 001 149"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 147"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"},{"nazov": "Oranž. Pružinka", "vykres": "00 1830 888 000"},{"nazov": "Trecí kotúč", "vykres": "00 1831 637 000"}]},
+  {"vykres":"00 1859 000 212","nazov":"Zmontovaný predtlmič","postup":"417 S","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 205"},{"nazov": "Krycí plech", "vykres": "00 1843 086 001"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Čierna pružinka", "vykres": "00 1825 001 381"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 213","nazov":"Predtlmič úplný","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 964"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 131"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"},{"nazov": "Oranž. Pružinka", "vykres": "00 1830 888 000"}]},
+  {"vykres":"00 1859 000 231","nazov":"Predtlmič úplný","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 001 405"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 163"},{"nazov": "Krycí plech", "vykres": "00 1843 384 000"},{"nazov": "Žltá pružinka", "vykres": "00 1825 001 427"},{"nazov": "Čierna pružinka", "vykres": "00 1825 001 381"}]},
+  {"vykres":"00 1859 000 233","nazov":"Predtlmič úplný","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 001 322"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 205"},{"nazov": "Krycí plech", "vykres": "00 1843 000 647"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Čierna pružinka", "vykres": "00 1825 001 381"},{"nazov": "Trecí segment  4x", "vykres": "00 1831 000 883"}]},
+  {"vykres":"00 1859 000 234","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 281 800"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Modrá pružinka 2 x", "vykres": "00 1830 801 000"}]},
+  {"vykres":"00 1859 000 237","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 278 300"},{"nazov": "pružina tlačná 4x", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 238","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "medzikotúč", "vykres": "00 1819 079 005"},{"nazov": "Pružina tlačná", "vykres": "00 1830 957 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 239","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "plech lamely", "vykres": "00 1847 663 000"},{"nazov": "medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 888 000"},{"nazov": "Plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 245","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 282 400"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 253","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 001 149"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 261"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"},{"nazov": "Žltá pružinka", "vykres": "00 1825 261 500"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"},{"nazov": "Trecí kotúč", "vykres": "00 1831 637 000"}]},
+  {"vykres":"00 1859 000 273","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 104"},{"nazov": "Medzikotúč", "vykres": "00 1819 279 900"},{"nazov": "Krycí plech", "vykres": "00 1843 086 004"},{"nazov": "Starorúž. Pružinka", "vykres": "00 1830 689 301"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"},{"nazov": "Trecí kotúč", "vykres": "00 1831 637 000"}]},
+  {"vykres":"00 1859 000 274","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 103"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 048"},{"nazov": "Krycí plech", "vykres": "00 1843 086 002"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Sterorúž. Pružinka", "vykres": "00 1830 099 200"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 275","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "Krycí plech", "vykres": "00 1843 384 000"},{"nazov": "Zelená pruž. 4x", "vykres": "00 1830 853 000"}]},
+  {"vykres":"00 1859 000 276","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 278 900"},{"nazov": "Krycí plech", "vykres": "00 1843 086 001"},{"nazov": "Oranž. Pružinka", "vykres": "00 1830 888 000"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 277","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 279 900"},{"nazov": "Krycí plech", "vykres": "00 1843 086 001"},{"nazov": "Oranž. Pruž. 4x", "vykres": "00 1830 888 000"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 278","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 001"},{"nazov": "pružina tlačná", "vykres": "00 1830 099 200"},{"nazov": "pružina tlačná", "vykres": "00 1830 690 200"},{"nazov": "plech krycí", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 279","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 035 101"},{"nazov": "Medzikotúč", "vykres": "00 1819 268 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 888 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 977 000"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"},{"nazov": "plech krycí", "vykres": "00 1843 086 001"}]},
+  {"vykres":"00 1859 000 280","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 264 100"},{"nazov": "pružina tlačná", "vykres": "00 1830 690 200"},{"nazov": "pružina tlačná", "vykres": "00 1830 923 000"},{"nazov": "plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 281","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "Krycí plech", "vykres": "00 1843 384 000"},{"nazov": "Zelená pruž.2x", "vykres": "00 1830 853 000"}]},
+  {"vykres":"00 1859 000 282","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "medzikotúč", "vykres": "00 1819 282 400"},{"nazov": "pružina tlačná", "vykres": "00 1830 099 200"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 283","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 261 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 690 200"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 284","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 275 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 285","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "Pružina tlačná", "vykres": "00 1830 957 000"},{"nazov": "Plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 286","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 035 103"},{"nazov": "Medzikotúč", "vykres": "00 1819 282 000"},{"nazov": "Krycí plech", "vykres": "00 1843 086 002"},{"nazov": "Modrá pružinka", "vykres": "00 1830 801 000"},{"nazov": "Čierna pružinka", "vykres": "00 1830 977 000"},{"nazov": "treci segment 4x", "vykres": "00 1831 575 000"}]},
+  {"vykres":"00 1859 000 298","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 001 610"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 153"},{"nazov": "trecí krúžok", "vykres": "00 1831 000 661"},{"nazov": "medzikotúč", "vykres": "00 1819 000 152"},{"nazov": "tlačná pružina 2x", "vykres": "00 1825 000 722"},{"nazov": "tlačná pružina 2x", "vykres": "00 1825 001 330"},{"nazov": "plech krycí", "vykres": "00 1843 000 797"}]},
+  {"vykres":"00 1859 000 341","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 001 828"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 205"},{"nazov": "Krycí plech", "vykres": "00 1843 000 956"},{"nazov": "Biela pružinka", "vykres": "00 1830 949 000"},{"nazov": "Čierna pružinka", "vykres": "00 1825 001 381"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 000 883"}]},
+  {"vykres":"00 1859 000 356","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Plech predtlmiča", "vykres": "00 1847 000 964"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 131"},{"nazov": "Krycí plech", "vykres": "00 1843 000 450"},{"nazov": "Oranž.pružinka", "vykres": "00 1830 888 000"},{"nazov": "Strieb. Pružinka", "vykres": "00 1830 977 000"}]},
+  {"vykres":"00 1859 000 359","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 272 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 360","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 258 003"},{"nazov": "pružina tlačná", "vykres": "00 1830 689 301"},{"nazov": "pružina tlačná", "vykres": "00 1830 722 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 361","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 079 103"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 362","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 011"},{"nazov": "pružina tlačná", "vykres": "00 1830 949 000"},{"nazov": "pružina tlačná", "vykres": "00 1825 168 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 363","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "medzikotúč", "vykres": "00 1819 260 100"},{"nazov": "pružina tlačná", "vykres": "00 1830 099 200"},{"nazov": "pružina tlačná", "vykres": "00 1830 690 200"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 364","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 000 964"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 118"},{"nazov": "Krycí plech", "vykres": "00 1843 000 450"},{"nazov": "Krúžok trecí", "vykres": "00 1831 335 125"}]},
+  {"vykres":"00 1859 000 368","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 258 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 690 200"},{"nazov": "pružina tlačná", "vykres": "00 1830 689 301"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 369","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 258 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 689 301"},{"nazov": "pružina tlačná", "vykres": "00 1830 853 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 370","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 275 001"},{"nazov": "pružina tlačná", "vykres": "00 1830 853 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 371","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 103"},{"nazov": "Medzikotúč", "vykres": "00 1819 274 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 977 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 099 200"},{"nazov": "Trecí segment 4x", "vykres": "00 1831 575 000"},{"nazov": "plech krycí", "vykres": "00 1843 086 002"}]},
+  {"vykres":"00 1859 000 380","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 272 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 977 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 381","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 258 004"},{"nazov": "pružina tlačná", "vykres": "00 1830 689 301"},{"nazov": "pružina tlačná", "vykres": "00 1830 096 100"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 384","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 663 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 262 000"},{"nazov": "pružina tlačná", "vykres": "00 1830 888 000"},{"nazov": "Plech krycí", "vykres": "00 1843 384 000"}]},
+  {"vykres":"00 1859 000 400","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 770 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 276 100"},{"nazov": "pružina tlačná 2x", "vykres": "00 1830 957 000"}]},
+  {"vykres":"00 1859 000 403","nazov":"náboj úplný","postup":"","zapisal":"","komponenty":[{"nazov": "náboj", "vykres": "00 1829 005 816"},{"nazov": "kotúč unášací", "vykres": "00 1847 001 989"},{"nazov": "nit", "vykres": "00 1817 000 109"}]},
+  {"vykres":"00 1859 000 415","nazov":"náboj úplný","postup":"","zapisal":"","komponenty":[{"nazov": "náboj", "vykres": "00 1829 005 534"},{"nazov": "kotúč unášací", "vykres": "00 1847 001 939"},{"nazov": "nit", "vykres": "00 1817 000 109"}]},
+  {"vykres":"00 1859 000 429","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací", "vykres": "00 1847 001 149"},{"nazov": "trecí krúžok", "vykres": "00 1831 637 000"},{"nazov": "Medzikotúč", "vykres": "00 1819 000 147"},{"nazov": "pružina tlačná oranž.", "vykres": "00 1830 888 000"},{"nazov": "prúžina žltá", "vykres": "00 1825 001 427"},{"nazov": "plech krycí", "vykres": "00 1843 086 003"}]},
+  {"vykres":"00 1859 000 451","nazov":"náboj úplný","postup":"","zapisal":"","komponenty":[{"nazov": "náboj", "vykres": "00 1829 006 581"},{"nazov": "kotúč unášací", "vykres": "00 1847 001 939"},{"nazov": "nit", "vykres": "00 1817 000 109"}]},
+  {"vykres":"00 1859 000 460","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 275 001"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]}
+];
+
+let _sprIdSeq = 0;
+function sprId(prefix) { return `${prefix || 'spr'}_${Date.now().toString(36)}_${(_sprIdSeq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
+function sprEsc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
+function sprFmtDate(iso) { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${+d}.${+m}.${y}`; }
+
+function ensureSprSeed() {
+  if (!Array.isArray(state.materialy))  state.materialy  = [];
+  if (!Array.isArray(state.sprievodky)) state.sprievodky = [];
+  if (!state.materialy.length && SPR_SEED_MATERIALY.length) {
+    state.materialy = SPR_SEED_MATERIALY.map(m => ({ id: sprId('mat'), ...m }));
+    saveState();
+    toast(`Katalóg materiálov načítaný z Excelu (${state.materialy.length} položiek) 🧩`, 'success');
+  }
+}
+
+function sortedMats() {
+  return [...(state.materialy || [])].sort((a, b) => (a.vykres || '').localeCompare(b.vykres || '', 'sk'));
+}
+
+function showSprTab(tab, btn) {
+  document.getElementById('spr-tab-evidencia').style.display = tab === 'evidencia' ? '' : 'none';
+  document.getElementById('spr-tab-materialy').style.display = tab === 'materialy' ? '' : 'none';
+  document.querySelectorAll('.spr-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (tab === 'evidencia') renderSprievodky(); else renderMaterialy();
+}
+
+// Evid. číslo v tvare DDMMRRRR/NN — poradie v rámci dňa (podľa pôvodného Excelu)
+function genEvc(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const prefix = `${d}${m}${y}`;
+  let maxN = 0;
+  (state.sprievodky || []).forEach(s => {
+    if (s.evc && s.evc.startsWith(prefix + '/')) {
+      const n = parseInt(s.evc.split('/')[1], 10);
+      if (!isNaN(n) && n > maxN) maxN = n;
+    }
+  });
+  return `${prefix}/${String(maxN + 1).padStart(2, '0')}`;
+}
+
+// ---------- Evidencia: render ----------
+function renderSprievodky() {
+  const tbody = document.getElementById('spr-tbody');
+  if (!tbody) return;
+  ensureSprSeed();
+  const q = (document.getElementById('spr-search').value || '').toLowerCase().trim();
+
+  // filter rokov — zachovaj aktuálny výber
+  const yearSel = document.getElementById('spr-year-filter');
+  const years = [...new Set((state.sprievodky || []).map(s => (s.datum || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const prevYear = yearSel.value;
+  yearSel.innerHTML = '<option value="">Všetky roky</option>' + years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (years.includes(prevYear)) yearSel.value = prevYear;
+
+  let list = [...(state.sprievodky || [])];
+  if (yearSel.value) list = list.filter(s => (s.datum || '').startsWith(yearSel.value));
+  if (q) list = list.filter(s =>
+    [s.evc, s.vykres, s.nazov, s.operator, s.material, s.zmena].some(v => (v || '').toLowerCase().includes(q)));
+  list.sort((a, b) => (b.datum || '').localeCompare(a.datum || '') || (b.evc || '').localeCompare(a.evc || ''));
+
+  // súhrn
+  const totalKs = list.reduce((sum, s) => sum + (+s.pocet || 0), 0);
+  document.getElementById('spr-summary').innerHTML = `
+    <div class="spr-sum-chip">Sprievodky<strong>${list.length}</strong></div>
+    <div class="spr-sum-chip">Kusov spolu<strong>${totalKs.toLocaleString('sk')}</strong></div>
+    <div class="spr-sum-chip">Materiálov v katalógu<strong>${(state.materialy || []).length}</strong></div>`;
+
+  document.getElementById('spr-empty').style.display = list.length ? 'none' : '';
+  tbody.innerHTML = list.map(s => {
+    const komp = Array.isArray(s.komponenty) ? s.komponenty : [];
+    const kompTip = komp.map(k => `${k.nazov} (${k.vykres})`).join('\n');
+    return `<tr>
+      <td class="spr-evc">${sprEsc(s.evc)}</td>
+      <td style="white-space:nowrap">${sprFmtDate(s.datum)}</td>
+      <td class="spr-vykres">${sprEsc(s.vykres)}</td>
+      <td>${sprEsc(s.nazov)}</td>
+      <td style="text-align:right;font-weight:600">${s.pocet ? (+s.pocet).toLocaleString('sk') : '—'}</td>
+      <td>${komp.length ? `<span class="spr-komp-badge" title="${sprEsc(kompTip)}">${komp.length}</span>` : '<span class="text-muted">—</span>'}</td>
+      <td>${sprEsc(s.operator || '—')}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm btn-icon" title="Tlačiť sprievodku" onclick="printSprievodka('${s.id}')">🖨</button>
+        <button class="btn btn-secondary btn-sm btn-icon" title="Upraviť" onclick="openSprModal('${s.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm btn-icon" title="Vymazať" onclick="deleteSprievodka('${s.id}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ---------- Evidencia: modal ----------
+let sprEditId = null;
+let sprModalKomp = [];
+
+function openSprModal(id, presetMatId) {
+  ensureSprSeed();
+  sprEditId = id || null;
+  const s = id ? (state.sprievodky || []).find(x => x.id === id) : null;
+
+  const sel = document.getElementById('spr-material');
+  sel.innerHTML = '<option value="">— ručné zadanie (bez katalógu) —</option>' +
+    sortedMats().map(m => `<option value="${sprEsc(m.id)}">${sprEsc(m.vykres)} — ${sprEsc(m.nazov)}</option>`).join('');
+
+  document.getElementById('spr-operator-list').innerHTML = sortedEmps()
+    .map(e => `<option value="${sprEsc(`${e.lastName} ${(e.firstName || '').charAt(0)}${e.firstName ? '.' : ''}`.trim())}">`).join('');
+
+  const today = fmtDate(new Date());
+  document.getElementById('spr-modal-title').textContent = s ? `📋 Sprievodka ${s.evc}` : '📋 Nová výrobná sprievodka';
+  document.getElementById('spr-datum').value = s ? (s.datum || today) : today;
+  document.getElementById('spr-evc').value = s ? (s.evc || '') : genEvc(today);
+  document.getElementById('spr-vykres').value = s ? (s.vykres || '') : '';
+  document.getElementById('spr-nazov').value = s ? (s.nazov || '') : '';
+  document.getElementById('spr-material-txt').value = s ? (s.material || '') : '';
+  document.getElementById('spr-zmena').value = s ? (s.zmena || '') : '';
+  document.getElementById('spr-pocet').value = s ? (s.pocet ?? '') : '';
+  document.getElementById('spr-operator').value = s ? (s.operator || '') : '';
+  sel.value = s ? (s.matId || '') : (presetMatId || '');
+  sprModalKomp = s ? (Array.isArray(s.komponenty) ? [...s.komponenty] : []) : [];
+  if (!s && presetMatId) onSprMaterialChange(); else renderSprKompPreview();
+
+  document.getElementById('spr-modal').classList.add('open');
+}
+
+function onSprDatumChange() {
+  if (!sprEditId) document.getElementById('spr-evc').value = genEvc(document.getElementById('spr-datum').value);
+}
+
+function onSprMaterialChange() {
+  const matId = document.getElementById('spr-material').value;
+  const m = (state.materialy || []).find(x => x.id === matId);
+  if (m) {
+    document.getElementById('spr-vykres').value = m.vykres || '';
+    document.getElementById('spr-nazov').value = m.nazov || '';
+    sprModalKomp = (m.komponenty || []).map(k => ({ ...k }));
+  } else {
+    sprModalKomp = [];
+  }
+  renderSprKompPreview();
+}
+
+function renderSprKompPreview() {
+  const el = document.getElementById('spr-komp-preview');
+  el.innerHTML = sprModalKomp.length
+    ? sprModalKomp.map((k, i) => `<div class="mat-komp-row"><span>${i + 1}. ${sprEsc(k.nazov)}</span><span class="kv">${sprEsc(k.vykres)}</span></div>`).join('')
+    : '<span class="text-muted">Žiadne komponenty — vyber materiál z katalógu.</span>';
+}
+
+function saveSprievodka() {
+  const evc = document.getElementById('spr-evc').value.trim();
+  const datum = document.getElementById('spr-datum').value;
+  const vykres = document.getElementById('spr-vykres').value.trim();
+  const nazov = document.getElementById('spr-nazov').value.trim();
+  if (!evc) { toast('Zadaj evidenčné číslo', 'error'); return; }
+  if (!datum) { toast('Zadaj dátum prijatia', 'error'); return; }
+  if (!vykres && !nazov) { toast('Zadaj číslo výkresu alebo názov dielca', 'error'); return; }
+  const dup = (state.sprievodky || []).find(s => s.evc === evc && s.id !== sprEditId);
+  if (dup && !confirm(`Evidenčné číslo ${evc} už existuje. Uložiť aj tak?`)) return;
+
+  const rec = {
+    id: sprEditId || sprId('spr'),
+    evc, datum, vykres, nazov,
+    matId: document.getElementById('spr-material').value || '',
+    material: document.getElementById('spr-material-txt').value.trim(),
+    zmena: document.getElementById('spr-zmena').value.trim(),
+    pocet: +document.getElementById('spr-pocet').value || 0,
+    operator: document.getElementById('spr-operator').value.trim(),
+    komponenty: sprModalKomp,
+  };
+  if (sprEditId) {
+    const i = state.sprievodky.findIndex(x => x.id === sprEditId);
+    if (i >= 0) state.sprievodky[i] = rec; else state.sprievodky.push(rec);
+  } else {
+    state.sprievodky.push(rec);
+  }
+  saveState(); renderSprievodky(); closeModal('spr-modal');
+  toast(`Sprievodka ${evc} uložená ✅`, 'success');
+}
+
+function deleteSprievodka(id) {
+  const s = (state.sprievodky || []).find(x => x.id === id);
+  if (!s || !confirm(`Vymazať sprievodku ${s.evc}?`)) return;
+  state.sprievodky = state.sprievodky.filter(x => x.id !== id);
+  saveState(); renderSprievodky();
+  toast('Sprievodka vymazaná 🗑');
+}
+
+// ---------- Katalóg materiálov ----------
+function renderMaterialy() {
+  const grid = document.getElementById('mat-grid');
+  if (!grid) return;
+  ensureSprSeed();
+  const q = (document.getElementById('mat-search').value || '').toLowerCase().trim();
+  let list = sortedMats();
+  if (q) list = list.filter(m =>
+    [m.vykres, m.nazov, m.postup, ...(m.komponenty || []).flatMap(k => [k.nazov, k.vykres])].some(v => (v || '').toLowerCase().includes(q)));
+
+  document.getElementById('mat-empty').style.display = list.length ? 'none' : '';
+  grid.innerHTML = list.map(m => `
+    <div class="mat-card">
+      <div class="mat-card-head">
+        <div>
+          <div class="mat-card-vykres">${sprEsc(m.vykres)}</div>
+          <div class="mat-card-title">${sprEsc(m.nazov)}</div>
+        </div>
+        ${m.postup ? `<span class="mat-postup-badge">${sprEsc(m.postup)}</span>` : ''}
+      </div>
+      <div class="mat-komp-list">
+        ${(m.komponenty || []).map((k, i) => `<div class="mat-komp-row"><span>${i + 1}. ${sprEsc(k.nazov)}</span><span class="kv">${sprEsc(k.vykres)}</span></div>`).join('') || '<span class="text-muted">Bez komponentov</span>'}
+      </div>
+      ${m.zapisal ? `<div class="text-sm text-muted">✍️ ${sprEsc(m.zapisal)}</div>` : ''}
+      <div class="mat-card-actions">
+        <button class="btn btn-primary btn-sm" onclick="openSprModal(null,'${m.id}')">📋 Sprievodka</button>
+        <button class="btn btn-secondary btn-sm" onclick="openMatModal('${m.id}')">✏️ Upraviť</button>
+        <button class="btn btn-danger btn-sm btn-icon" title="Vymazať" onclick="deleteMaterial('${m.id}')">🗑</button>
+      </div>
+    </div>`).join('');
+}
+
+let matEditId = null;
+const MAT_KOMP_MAX = 7;
+
+function openMatModal(id) {
+  ensureSprSeed();
+  matEditId = id || null;
+  const m = id ? (state.materialy || []).find(x => x.id === id) : null;
+  document.getElementById('mat-modal-title').textContent = m ? `🧩 ${m.vykres}` : '🧩 Nový materiál';
+  document.getElementById('mat-vykres').value = m ? (m.vykres || '') : '';
+  document.getElementById('mat-nazov').value = m ? (m.nazov || '') : '';
+  document.getElementById('mat-postup').value = m ? (m.postup || '') : '';
+  document.getElementById('mat-zapisal').value = m ? (m.zapisal || '') : '';
+  const rows = document.getElementById('mat-komp-rows');
+  rows.innerHTML = Array.from({ length: MAT_KOMP_MAX }, (_, i) => {
+    const k = (m && m.komponenty && m.komponenty[i]) || {};
+    return `<div class="mat-komp-input-row">
+      <span class="idx">${i + 1}.</span>
+      <input type="text" id="mat-kn-${i}" placeholder="Názov komponentu" value="${sprEsc(k.nazov || '')}">
+      <input type="text" id="mat-kv-${i}" placeholder="Číslo výkresu" value="${sprEsc(k.vykres || '')}">
+    </div>`;
+  }).join('');
+  document.getElementById('mat-modal').classList.add('open');
+}
+
+function saveMaterial() {
+  const vykres = document.getElementById('mat-vykres').value.trim();
+  const nazov = document.getElementById('mat-nazov').value.trim();
+  if (!vykres || !nazov) { toast('Zadaj číslo výkresu aj názov dielca', 'error'); return; }
+  const komponenty = [];
+  for (let i = 0; i < MAT_KOMP_MAX; i++) {
+    const kn = document.getElementById(`mat-kn-${i}`).value.trim();
+    const kv = document.getElementById(`mat-kv-${i}`).value.trim();
+    if (kn || kv) komponenty.push({ nazov: kn, vykres: kv });
+  }
+  const rec = {
+    id: matEditId || sprId('mat'),
+    vykres, nazov, komponenty,
+    postup: document.getElementById('mat-postup').value.trim(),
+    zapisal: document.getElementById('mat-zapisal').value.trim(),
+  };
+  if (matEditId) {
+    const i = state.materialy.findIndex(x => x.id === matEditId);
+    if (i >= 0) state.materialy[i] = rec; else state.materialy.push(rec);
+  } else {
+    state.materialy.push(rec);
+  }
+  saveState(); renderMaterialy(); closeModal('mat-modal');
+  toast(`Materiál ${vykres} uložený ✅`, 'success');
+}
+
+function deleteMaterial(id) {
+  const m = (state.materialy || []).find(x => x.id === id);
+  if (!m || !confirm(`Vymazať materiál ${m.vykres} — ${m.nazov} z katalógu?\n(Existujúce sprievodky si komponenty ponechajú.)`)) return;
+  state.materialy = state.materialy.filter(x => x.id !== id);
+  saveState(); renderMaterialy();
+  toast('Materiál vymazaný 🗑');
+}
+
+// ---------- Tlač formulára VÝROBNÁ SPRIEVODKA ----------
+function printSprievodka(id) {
+  const s = (state.sprievodky || []).find(x => x.id === id);
+  if (!s) return;
+  const komp = Array.isArray(s.komponenty) ? s.komponenty : [];
+  const kompRows = Array.from({ length: Math.max(7, komp.length) }, (_, i) => {
+    const k = komp[i] || {};
+    return `<tr><td>${sprEsc(k.nazov || '')}&nbsp;</td><td class="mono">${sprEsc(k.vykres || '')}&nbsp;</td></tr>`;
+  }).join('');
+  const opRows = Array.from({ length: 18 }, (_, i) => `<tr>
+    <td>${i === 0 ? sprFmtDate(s.datum) : ''}&nbsp;</td><td></td>
+    <td>${i === 0 && s.pocet ? sprEsc(s.pocet) : ''}</td><td></td>
+    <td>${i === 0 ? sprEsc(s.operator || '') : ''}</td>
+    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+  </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="sk"><head><meta charset="UTF-8">
+<title>Sprievodka ${sprEsc(s.evc)}</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; margin: 0; }
+  .form { border: 2px solid #000; padding: 8px 10px; }
+  .form-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+  .form-title { font-size: 18px; font-weight: bold; letter-spacing: 1px; }
+  .form-evc { font-size: 13px; } .form-evc b { font-size: 16px; }
+  .top { display: flex; gap: 16px; margin-bottom: 8px; }
+  .info { flex: 1; }
+  .info-row { display: flex; border-bottom: 1px solid #000; padding: 4px 0; }
+  .info-row .lbl { width: 140px; font-weight: bold; font-size: 10px; }
+  .info-row .val { flex: 1; }
+  .komp { width: 42%; }
+  .komp-title { font-weight: bold; font-size: 10px; margin-bottom: 3px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #000; padding: 3px 4px; font-size: 10px; }
+  th { background: #eee; text-align: center; font-size: 9px; }
+  .mono { font-family: 'Courier New', monospace; white-space: nowrap; }
+  .ops td { height: 16px; }
+  .ops .num { width: 22px; text-align: center; }
+  .footer { display: flex; justify-content: space-between; margin-top: 6px; font-size: 9px; }
+</style></head>
+<body onload="window.print()">
+<div class="form">
+  <div class="form-head">
+    <div class="form-title">VÝROBNÁ SPRIEVODKA</div>
+    <div class="form-evc">EVID. ČÍSLO (KÓD): <b>${sprEsc(s.evc)}</b></div>
+  </div>
+  <div class="top">
+    <div class="info">
+      <div class="info-row"><span class="lbl">MATERIÁL:</span><span class="val">${sprEsc(s.material || '')}</span></div>
+      <div class="info-row"><span class="lbl">DÁTUM PRIJATIA:</span><span class="val">${sprFmtDate(s.datum)}</span></div>
+      <div class="info-row"><span class="lbl">NÁZOV DIELCA:</span><span class="val">${sprEsc(s.nazov || '')}</span></div>
+      <div class="info-row"><span class="lbl">ČÍSLO VÝKRESU:</span><span class="val mono">${sprEsc(s.vykres || '')}</span></div>
+      <div class="info-row"><span class="lbl">ZMENA:</span><span class="val">${sprEsc(s.zmena || '')}</span></div>
+      <div class="info-row"><span class="lbl">POČET KUSOV:</span><span class="val"><b>${s.pocet ? (+s.pocet).toLocaleString('sk') : ''}</b></span></div>
+    </div>
+    <div class="komp">
+      <div class="komp-title">Vstupujúce komponenty:</div>
+      <table>
+        <thead><tr><th style="text-align:left">Názov komp.</th><th style="text-align:left">Číslo výkresu</th></tr></thead>
+        <tbody>${kompRows}</tbody>
+      </table>
+    </div>
+  </div>
+  <table class="ops">
+    <thead><tr>
+      <th style="width:60px">Dátum</th><th>OPERÁCIA</th><th style="width:50px">POČET KS</th><th style="width:50px">DOBRÉ KS</th>
+      <th style="width:170px">MENO A OSOBNÉ ČÍSLO PRACOVNÍKA</th>
+      <th class="num">1.</th><th class="num">2.</th><th class="num">3.</th><th class="num">4.</th><th class="num">5.</th><th class="num">6.</th>
+      <th style="width:70px">POTVRDENIE 1. KS TK</th><th style="width:70px">UVOĽNENIE PO OPER. TK</th>
+    </tr></thead>
+    <tbody>${opRows}</tbody>
+  </table>
+  <div class="footer"><span>FORMULÁR Č. 048/1/1-95</span><span>DKT, spol. s r.o.</span></div>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('Povoľ vyskakovacie okná pre tlač', 'error'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+// ---------- Import z pôvodného Excel súboru (hárok2) ----------
+function sprCellDate(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number') {
+    if (v > 200000) {                                // dátum omylom zapísaný ako číslo DDMMRRRR (napr. 19112015)
+      const s = String(Math.round(v)).padStart(8, '0');
+      const d = +s.slice(0, 2), mo = +s.slice(2, 4), y = +s.slice(4);
+      if (y >= 1990 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31)
+        return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      return '';
+    }
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000)); // Excel sériový dátum
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  const m = String(v).trim().match(/^(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})$/); // "16.5.2014"
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
+}
+
+function importSprievodkyXls(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  ensureSprSeed();
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const shName = wb.SheetNames.find(n => n.toLowerCase().includes('rok2')) || wb.SheetNames[1] || wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[shName], { header: 1, raw: true, defval: '' });
+      const str = v => String(v ?? '').trim();
+
+      // Pravý blok (O..AH, stĺpce 14..33) = katalóg materiálov; posledný záznam pre výkres vyhráva
+      const matByVykres = {};
+      let matNew = 0, matUpd = 0;
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r] || [];
+        const vykres = str(row[17]), nazov = str(row[18]);
+        if (!vykres && !nazov) continue;
+        const komponenty = [];
+        for (let i = 0; i < MAT_KOMP_MAX; i++) {
+          const kn = str(row[19 + i * 2]), kv = str(row[20 + i * 2]);
+          if (kn || kv) komponenty.push({ nazov: kn, vykres: kv });
+        }
+        matByVykres[vykres] = { vykres, nazov, komponenty, postup: str(row[14]), zapisal: str(row[33]) };
+      }
+      Object.values(matByVykres).forEach(m => {
+        const ex = state.materialy.find(x => x.vykres === m.vykres);
+        if (ex) { Object.assign(ex, m); matUpd++; }
+        else { state.materialy.push({ id: sprId('mat'), ...m }); matNew++; }
+      });
+
+      // Ľavý blok (A..L, stĺpce 0..11) = evidencia sprievodiek; duplicitné evid. čísla preskoč
+      const existingEvc = new Set(state.sprievodky.map(s => s.evc));
+      let sprNew = 0, sprSkip = 0;
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r] || [];
+        const evc = str(row[0]), vykres = str(row[2]), nazov = str(row[3]);
+        if (!evc || (!vykres && !nazov)) continue;
+        if (existingEvc.has(evc)) { sprSkip++; continue; }
+        existingEvc.add(evc);
+        const mat = state.materialy.find(m => m.vykres === vykres);
+        state.sprievodky.push({
+          id: sprId('spr'), evc,
+          datum: sprCellDate(row[1]), vykres, nazov,
+          matId: mat ? mat.id : '', material: '', zmena: '',
+          pocet: +row[10] || 0, operator: str(row[11]),
+          komponenty: mat ? mat.komponenty.map(k => ({ ...k })) : [],
+        });
+        sprNew++;
+      }
+
+      saveState(); renderSprievodky(); renderMaterialy();
+      toast(`Import hotový: ${sprNew} sprievodiek (${sprSkip} duplicít preskočených), ${matNew} nových a ${matUpd} aktualizovaných materiálov ✅`, 'success');
+    } catch (err) {
+      console.error('Import sprievodiek zlyhal:', err);
+      toast('Import zlyhal — skontroluj, či ide o pôvodný súbor Sprievodky (hárok2)', 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ---------- Export evidencie do Excelu ----------
+function exportSprievodkyExcel() {
+  const list = [...(state.sprievodky || [])].sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+  const header = ['Eviden. číslo', 'Dátum', 'Číslo výkresu', 'Názov dielca', 'Počet ks', 'Meno operátora', 'Materiál', 'Zmena',
+    ...Array.from({ length: MAT_KOMP_MAX }, (_, i) => [`Názov ${i + 1}. komponentu`, 'Číslo výkresu']).flat()];
+  const data = list.map(s => {
+    const row = [s.evc, sprFmtDate(s.datum), s.vykres, s.nazov, s.pocet || '', s.operator, s.material, s.zmena];
+    for (let i = 0; i < MAT_KOMP_MAX; i++) {
+      const k = (s.komponenty || [])[i] || {};
+      row.push(k.nazov || '', k.vykres || '');
+    }
+    return row;
+  });
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+  ws['!cols'] = header.map((h, i) => ({ wch: i < 4 ? 18 : 16 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sprievodky');
+  XLSX.writeFile(wb, `sprievodky_${fmtDate(new Date())}.xlsx`);
+  toast('Excel export stiahnutý ⬇', 'success');
 }
 
 // ==================== PUBLIC VIEW ====================

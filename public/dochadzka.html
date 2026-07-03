@@ -759,7 +759,7 @@
                 <thead>
                   <tr>
                     <th style="width:24px"></th><th>Číslo výkresu</th><th>Názov dielca</th><th>Č. postupu</th>
-                    <th>Komponenty</th><th>Zapísal</th><th style="width:170px">Akcie</th>
+                    <th>Komponenty</th><th style="width:170px">Akcie</th>
                   </tr>
                 </thead>
                 <tbody id="mat-tbody"></tbody>
@@ -993,15 +993,9 @@
           <input type="text" id="mat-nazov" placeholder="Zmontovaný predtlmič">
         </div>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <div class="form-label">🗂 Č. postupu</div>
-          <input type="text" id="mat-postup" placeholder="napr. 138 S">
-        </div>
-        <div class="form-group">
-          <div class="form-label">✍️ Zapísal</div>
-          <input type="text" id="mat-zapisal" placeholder="Priezvisko M.">
-        </div>
+      <div class="form-group">
+        <div class="form-label">🗂 Č. postupu</div>
+        <input type="text" id="mat-postup" placeholder="napr. 138 S">
       </div>
       <div class="form-group">
         <div class="form-label">Vstupujúce komponenty <span style="font-weight:400;color:var(--text-muted)">(názov + číslo výkresu, max. 7)</span></div>
@@ -2857,7 +2851,6 @@ function renderMaterialy() {
       <td>${sprEsc(m.nazov)}</td>
       <td>${m.postup ? `<span class="mat-postup-badge">${sprEsc(m.postup)}</span>` : '—'}</td>
       <td>${komp.length ? `<span class="spr-komp-badge" title="${sprEsc(kompTip)}">${komp.length}</span>` : '<span class="text-muted">—</span>'}</td>
-      <td>${sprEsc(m.zapisal || '—')}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">
         <button class="btn btn-primary btn-sm" title="Nová sprievodka z tohto materiálu" onclick="openSprModal(null,'${m.id}')">📋</button>
         <button class="btn btn-secondary btn-sm btn-icon" title="Upraviť" onclick="openMatModal('${m.id}')">✏️</button>
@@ -2866,7 +2859,7 @@ function renderMaterialy() {
     </tr>
     <tr id="mat-detail-${m.id}" style="display:none">
       <td style="background:var(--slate-light)"></td>
-      <td colspan="6" style="background:var(--slate-light);padding:10px 14px">
+      <td colspan="5" style="background:var(--slate-light);padding:10px 14px">
         <div class="mat-komp-list" style="border-top:none;padding-top:0;max-width:520px">
           ${komp.map((k, i) => `<div class="mat-komp-row"><span>${i + 1}. ${sprEsc(k.nazov)}</span><span class="kv">${sprEsc(k.vykres)}</span></div>`).join('') || '<span class="text-muted">Bez komponentov</span>'}
         </div>
@@ -2895,7 +2888,6 @@ function openMatModal(id) {
   document.getElementById('mat-vykres').value = m ? (m.vykres || '') : '';
   document.getElementById('mat-nazov').value = m ? (m.nazov || '') : '';
   document.getElementById('mat-postup').value = m ? (m.postup || '') : '';
-  document.getElementById('mat-zapisal').value = m ? (m.zapisal || '') : '';
   const rows = document.getElementById('mat-komp-rows');
   rows.innerHTML = Array.from({ length: MAT_KOMP_MAX }, (_, i) => {
     const k = (m && m.komponenty && m.komponenty[i]) || {};
@@ -2918,11 +2910,12 @@ function saveMaterial() {
     const kv = document.getElementById(`mat-kv-${i}`).value.trim();
     if (kn || kv) komponenty.push({ nazov: kn, vykres: kv });
   }
+  const prev = matEditId ? (state.materialy || []).find(x => x.id === matEditId) : null;
   const rec = {
     id: matEditId || sprId('mat'),
     vykres, nazov, komponenty,
     postup: document.getElementById('mat-postup').value.trim(),
-    zapisal: document.getElementById('mat-zapisal').value.trim(),
+    zapisal: prev ? (prev.zapisal || '') : '',
   };
   if (matEditId) {
     const i = state.materialy.findIndex(x => x.id === matEditId);
@@ -2951,36 +2944,39 @@ function printSprievodka(id) {
     const k = komp[i] || {};
     return `<tr><td>${sprEsc(k.nazov || '')}&nbsp;</td><td class="mono">${sprEsc(k.vykres || '')}&nbsp;</td></tr>`;
   }).join('');
-  const opRows = Array.from({ length: 18 }, (_, i) => `<tr>
+  const opRows = Array.from({ length: 21 }, (_, i) => `<tr>
     <td>${i === 0 ? sprFmtDate(s.datum) : ''}&nbsp;</td><td></td>
     <td>${i === 0 && s.pocet ? sprEsc(s.pocet) : ''}</td><td></td>
     <td>${i === 0 ? sprEsc(s.operator || '') : ''}</td>
     <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
   </tr>`).join('');
 
+  // Jedna kópia formulára na A5 — v hárku 1 boli dve totožné vedľa seba (2× A5 na A4)
   const html = `<!DOCTYPE html><html lang="sk"><head><meta charset="UTF-8">
 <title>Sprievodka ${sprEsc(s.evc)}</title>
 <style>
-  @page { size: A4 landscape; margin: 10mm; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; margin: 0; }
-  .form { border: 2px solid #000; padding: 8px 10px; }
-  .form-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
-  .form-title { font-size: 18px; font-weight: bold; letter-spacing: 1px; }
-  .form-evc { font-size: 13px; } .form-evc b { font-size: 16px; }
-  .top { display: flex; gap: 16px; margin-bottom: 8px; }
-  .info { flex: 1; }
-  .info-row { display: flex; border-bottom: 1px solid #000; padding: 4px 0; }
-  .info-row .lbl { width: 140px; font-weight: bold; font-size: 10px; }
-  .info-row .val { flex: 1; }
-  .komp { width: 42%; }
-  .komp-title { font-weight: bold; font-size: 10px; margin-bottom: 3px; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #000; padding: 3px 4px; font-size: 10px; }
-  th { background: #eee; text-align: center; font-size: 9px; }
+  @page { size: A5 portrait; margin: 7mm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5px; color: #000; margin: 0; }
+  .form { border: 2px solid #000; padding: 5px 7px; width: 100%; box-sizing: border-box; }
+  .form-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 6px; gap: 6px; }
+  .form-title { font-size: 13px; font-weight: bold; letter-spacing: .5px; }
+  .form-evc { font-size: 9px; white-space: nowrap; } .form-evc b { font-size: 12px; }
+  .top { display: flex; gap: 8px; margin-bottom: 6px; }
+  .info { flex: 1; min-width: 0; }
+  .info-row { display: flex; border-bottom: 1px solid #000; padding: 3px 0; }
+  .info-row .lbl { width: 82px; flex: none; font-weight: bold; font-size: 7.5px; }
+  .info-row .val { flex: 1; min-width: 0; }
+  .komp { width: 46%; flex: none; }
+  .komp-title { font-weight: bold; font-size: 7.5px; margin-bottom: 2px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th, td { border: 1px solid #000; padding: 2px 2px; font-size: 7.5px; overflow: hidden; }
+  th { background: #eee; text-align: center; font-size: 6.5px; }
+  .komp th, .komp td { text-align: left; }
+  .komp td.mono { width: 42%; }
   .mono { font-family: 'Courier New', monospace; white-space: nowrap; }
-  .ops td { height: 16px; }
-  .ops .num { width: 22px; text-align: center; }
-  .footer { display: flex; justify-content: space-between; margin-top: 6px; font-size: 9px; }
+  .ops td { height: 19px; }
+  .ops .num { width: 12px; text-align: center; }
+  .footer { display: flex; justify-content: space-between; margin-top: 4px; font-size: 7px; }
 </style></head>
 <body onload="window.print()">
 <div class="form">
@@ -3007,10 +3003,10 @@ function printSprievodka(id) {
   </div>
   <table class="ops">
     <thead><tr>
-      <th style="width:60px">Dátum</th><th>OPERÁCIA</th><th style="width:50px">POČET KS</th><th style="width:50px">DOBRÉ KS</th>
-      <th style="width:170px">MENO A OSOBNÉ ČÍSLO PRACOVNÍKA</th>
+      <th style="width:36px">Dátum</th><th>OPERÁCIA</th><th style="width:28px">POČET KS</th><th style="width:28px">DOBRÉ KS</th>
+      <th style="width:88px">MENO A OSOBNÉ ČÍSLO PRACOVNÍKA</th>
       <th class="num">1.</th><th class="num">2.</th><th class="num">3.</th><th class="num">4.</th><th class="num">5.</th><th class="num">6.</th>
-      <th style="width:70px">POTVRDENIE 1. KS TK</th><th style="width:70px">UVOĽNENIE PO OPER. TK</th>
+      <th style="width:44px">POTVRDENIE 1. KS TK</th><th style="width:44px">UVOĽNENIE PO OPER. TK</th>
     </tr></thead>
     <tbody>${opRows}</tbody>
   </table>

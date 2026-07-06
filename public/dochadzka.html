@@ -182,6 +182,8 @@
   .noise-emp-add input{padding:4px 10px;border:1px solid var(--slate-border);border-radius:20px;font-family:'Inter',sans-serif;font-size:.82rem;outline:none;transition:border-color .15s;width:160px}
   .noise-emp-add input:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
   .noise-emp-label{font-size:.8rem;font-weight:500;color:var(--slate);white-space:nowrap}
+  .noise-exclude-btn{border:none;background:none;cursor:pointer;color:#CBD5E1;font-size:.85rem;line-height:1;padding:0 2px;margin-left:4px;transition:color .15s}
+  .noise-exclude-btn:hover{color:var(--red)}
 
   .flex{display:flex}.items-center{align-items:center}.gap-2{gap:8px}
   .text-sm{font-size:.8rem}.text-muted{color:var(--slate)}
@@ -541,7 +543,7 @@
             <select id="noise-year" onchange="renderNoise()"></select>
             <div class="flex items-center gap-2">
               <label class="text-sm text-muted">Sadzba (€/h):</label>
-              <input type="number" id="noise-rate" value="0.50" step="0.05" min="0" style="width:80px" oninput="renderNoise()">
+              <input type="number" id="noise-rate" step="0.05" min="0" style="width:80px" oninput="onNoiseRateInput()">
             </div>
             <button class="btn btn-primary" onclick="exportNoiseExcel()">
               <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -558,6 +560,10 @@
                 onkeydown="if(event.key==='Enter')addNoiseEmployee()">
               <button class="btn btn-secondary btn-sm" onclick="addNoiseEmployee()">Pridať</button>
             </div>
+          </div>
+          <div class="noise-emp-panel" id="noise-excluded-panel" style="display:none">
+            <span class="noise-emp-label">🚫 Vylúčení z hluku (bez nároku):</span>
+            <div id="noise-excluded-tags"></div>
           </div>
           <div class="noise-summary" id="noise-summary"></div>
           <div class="matrix-wrap">
@@ -1025,7 +1031,7 @@
 <script>
 // ==================== DATA STORE ====================
 const STORE_KEY = 'dochadzka_v2';
-let state = { employees: [], attendance: {}, noiseHours: {} };
+let state = { employees: [], attendance: {}, noiseHours: {}, noiseExcluded: [], noiseRate: 0.5 };
 
 // ==================== FIREBASE CONFIG ====================
 const FB_CONFIG = {
@@ -1157,7 +1163,7 @@ function startRealtimePolling() {
       applyState(data);
       _lastSavedHash = incoming;
       try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch(e) {}
-      renderMatrix(); renderEmployees(); renderNoise(); renderNoiseEmployeeTags();
+      renderMatrix(); renderEmployees(); renderNoise(); renderNoiseEmployeeTags(); renderNoiseExcludedTags();
       if (typeof renderSprievodky === 'function') { renderSprievodky(); renderMaterialy(); }
       if (!window.PUBLIC_VIEW && typeof validateSession === 'function') validateSession();
       setSyncStatus('synced');
@@ -1171,6 +1177,8 @@ function applyState(data) {
   state.attendance     = (data.attendance  && typeof data.attendance  === 'object' && !Array.isArray(data.attendance))  ? data.attendance  : {};
   state.noiseHours     = (data.noiseHours  && typeof data.noiseHours  === 'object' && !Array.isArray(data.noiseHours))  ? data.noiseHours  : {};
   state.noiseEmployees = Array.isArray(data.noiseEmployees) ? data.noiseEmployees : [];
+  state.noiseExcluded  = Array.isArray(data.noiseExcluded) ? data.noiseExcluded : [];
+  state.noiseRate      = (typeof data.noiseRate === 'number' && !isNaN(data.noiseRate)) ? data.noiseRate : 0.5;
   state.users          = Array.isArray(data.users) ? data.users : (state.users || []);
   state.sprievodky     = Array.isArray(data.sprievodky) ? data.sprievodky : [];
   state.materialy      = Array.isArray(data.materialy)  ? data.materialy  : [];
@@ -1190,6 +1198,8 @@ function guardState() {
   if (!state.noiseHours  || typeof state.noiseHours  !== 'object' || Array.isArray(state.noiseHours))  state.noiseHours  = {};
   if (!Array.isArray(state.employees))      state.employees      = [];
   if (!Array.isArray(state.noiseEmployees)) state.noiseEmployees = [];
+  if (!Array.isArray(state.noiseExcluded))  state.noiseExcluded  = [];
+  if (typeof state.noiseRate !== 'number' || isNaN(state.noiseRate)) state.noiseRate = 0.5;
   if (!Array.isArray(state.users))          state.users          = [];
   if (!Array.isArray(state.sprievodky))     state.sprievodky     = [];
   if (!Array.isArray(state.materialy))      state.materialy      = [];
@@ -1232,7 +1242,7 @@ function showSection(id, btn) {
   document.getElementById('sec-'+id).classList.add('active');
   if (btn) btn.classList.add('active');
   if (id==='matrix') renderMatrix();
-  if (id==='noise') { renderNoise(); renderNoiseEmployeeTags(); }
+  if (id==='noise') { renderNoise(); renderNoiseEmployeeTags(); renderNoiseExcludedTags(); }
   if (id==='employees') renderEmployees();
   if (id==='stats') renderStats();
   if (id==='users') renderUsers();
@@ -1610,11 +1620,49 @@ function removeNoiseEmployee(idx) {
 
 // ==================== NOISE ====================
 let noiseSaveTimer=null;
+let noiseRateSaveTimer=null;
+function onNoiseRateInput() {
+  const input=document.getElementById('noise-rate');
+  const val=+input.value;
+  state.noiseRate = isNaN(val) ? 0 : val;
+  renderNoise();
+  clearTimeout(noiseRateSaveTimer);
+  noiseRateSaveTimer=setTimeout(()=>{ saveState(); }, 600);
+}
+function excludeNoiseEmployee(id) {
+  const emp = state.employees.find(e => e.id === id);
+  if (!emp) return;
+  const name = `${emp.lastName||''} ${emp.firstName||''}`.trim();
+  if (!confirm(`Vylúčiť "${name}" z tabuľky príplatkov za hluk? Zamestnanec zostáva v systéme, len sa nebude zobrazovať v tejto tabuľke (dá sa kedykoľvek vrátiť).`)) return;
+  state.noiseExcluded = state.noiseExcluded || [];
+  if (!state.noiseExcluded.includes(id)) state.noiseExcluded.push(id);
+  saveState(); renderNoise(); renderNoiseExcludedTags();
+  toast('Zamestnanec vylúčený z hluku');
+}
+function includeNoiseEmployee(id) {
+  state.noiseExcluded = (state.noiseExcluded||[]).filter(x => x !== id);
+  saveState(); renderNoise(); renderNoiseExcludedTags();
+  toast('Zamestnanec vrátený do hluku', 'success');
+}
+function renderNoiseExcludedTags() {
+  const panel = document.getElementById('noise-excluded-panel');
+  const tags = document.getElementById('noise-excluded-tags');
+  if (!panel || !tags) return;
+  const excludedIds = state.noiseExcluded || [];
+  const excludedEmps = state.employees.filter(e => excludedIds.includes(e.id));
+  if (!excludedEmps.length) { panel.style.display='none'; tags.innerHTML=''; return; }
+  panel.style.display='flex';
+  tags.innerHTML = excludedEmps.map(e =>
+    `<span class="noise-emp-tag">${`${e.lastName||''} ${e.firstName||''}`.trim()}<button onclick="includeNoiseEmployee('${e.id}')" title="Vrátiť do hluku">+</button></span>`
+  ).join('');
+}
 function renderNoise() {
   const {m,y}=getMonthYear('noise-month','noise-year');
   const days=daysInMonth(y,m);
   const holidays=getSlovakHolidays(y);
-  const rate=+document.getElementById('noise-rate').value||0;
+  const rateInput=document.getElementById('noise-rate');
+  if (document.activeElement !== rateInput) rateInput.value = state.noiseRate;
+  const rate=+rateInput.value||0;
   const table=document.getElementById('noise-table');
   let html='<thead><tr><th class="col-name">Zamestnanec</th>';
   for(let d=1;d<=days;d++){
@@ -1624,8 +1672,11 @@ function renderNoise() {
   }
   html+='<th class="sum-header">Hodín</th><th class="sum-header">Suma €</th></tr></thead><tbody>';
   let grandT=0,grandA=0;
-  // Combine main employees + noise-only employees
-  const mainEmps = sortedEmps().map(e => ({ id: e.id, name: `${e.lastName||''} ${e.firstName||''}`.trim(), isNoiseOnly: false }));
+  // Combine main employees (minus those excluded from noise) + noise-only employees
+  const excludedIds = state.noiseExcluded || [];
+  const mainEmps = sortedEmps()
+    .filter(e => !excludedIds.includes(e.id))
+    .map(e => ({ id: e.id, name: `${e.lastName||''} ${e.firstName||''}`.trim(), isNoiseOnly: false }));
   const noiseOnlyEmps = (state.noiseEmployees||[]).map(e => ({ id: e.id, name: e.name, isNoiseOnly: true }));
   const allNoiseEmps = [...mainEmps, ...noiseOnlyEmps];
 
@@ -1636,7 +1687,8 @@ function renderNoise() {
     let total=0;
     const rowStyle = emp.isNoiseOnly ? 'background:#FAFFF5' : '';
     const badge = emp.isNoiseOnly ? ' <span style="font-size:.65rem;background:#DCFCE7;color:#16A34A;border-radius:3px;padding:1px 4px;font-weight:600">H</span>' : '';
-    html+=`<tr style="${rowStyle}"><td class="col-name">${emp.name}${badge}</td>`;
+    const excludeBtn = emp.isNoiseOnly ? '' : ` <button class="noise-exclude-btn" onclick="excludeNoiseEmployee('${emp.id}')" title="Vylúčiť z hluku (bez nároku)">×</button>`;
+    html+=`<tr style="${rowStyle}"><td class="col-name">${emp.name}${badge}${excludeBtn}</td>`;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       const nk=`noise_${emp.id}_${y}_${String(m).padStart(2,'0')}_${String(d).padStart(2,'0')}`;
@@ -1655,7 +1707,7 @@ function renderNoise() {
     <div class="noise-stat"><div class="noise-stat-label">Hodiny v hluku</div><div class="noise-stat-val">${grandT.toFixed(1)} h</div></div>
     <div class="noise-stat"><div class="noise-stat-label">Sadzba</div><div class="noise-stat-val">${rate.toFixed(2)} €/h</div></div>
     <div class="noise-stat"><div class="noise-stat-label">Celková suma</div><div class="noise-stat-val" style="color:var(--green)">${grandA.toFixed(2)} €</div></div>
-    <div class="noise-stat"><div class="noise-stat-label">Zamestnanci</div><div class="noise-stat-val">${state.employees.length + (state.noiseEmployees||[]).length}</div></div>`;
+    <div class="noise-stat"><div class="noise-stat-label">Zamestnanci</div><div class="noise-stat-val">${allNoiseEmps.length}</div></div>`;
 }
 function saveNoise(input) {
   const key=input.dataset.key;
@@ -1894,7 +1946,8 @@ function deleteEmployee(id) {
   state.employees=state.employees.filter(e=>e.id!==id);
   Object.keys(state.attendance||{}).forEach(k=>{if(k.startsWith(id))delete state.attendance[k];});
   Object.keys(state.noiseHours||{}).forEach(k=>{if(k.includes(id))delete state.noiseHours[k];});
-  saveState(); renderEmployees(); toast('Zamestnanec odstránený');
+  state.noiseExcluded=(state.noiseExcluded||[]).filter(x=>x!==id);
+  saveState(); renderEmployees(); renderNoise(); renderNoiseExcludedTags(); toast('Zamestnanec odstránený');
 }
 function loadTestEmployees() {
   const test=[
@@ -1988,8 +2041,9 @@ function exportNoiseExcel() {
   const wb=XLSX.utils.book_new();
   const header=['Zamestnanec',...Array.from({length:days},(_,i)=>i+1),'Celkom hodín',`Suma (${rate} €/h)`];
   const rows=[header];
+  const excludedIds = state.noiseExcluded || [];
   const exportEmps = [
-    ...sortedEmps().map(e=>({ id:e.id, name:`${e.lastName||''} ${e.firstName||''}`.trim() })),
+    ...sortedEmps().filter(e=>!excludedIds.includes(e.id)).map(e=>({ id:e.id, name:`${e.lastName||''} ${e.firstName||''}`.trim() })),
     ...(state.noiseEmployees||[]).map(e=>({ id:e.id, name:e.name }))
   ];
   exportEmps.forEach(emp=>{
@@ -3320,6 +3374,7 @@ renderTodayAbsences();
 renderPendingApprovals();
 renderEmployees();
 renderNoiseEmployeeTags();
+renderNoiseExcludedTags();
 
 // Load fresh data from cloud in background
 cloudLoad().then(() => {
@@ -3329,6 +3384,7 @@ cloudLoad().then(() => {
   renderEmployees();
   renderNoise();
   renderNoiseEmployeeTags();
+  renderNoiseExcludedTags();
   if (!window.PUBLIC_VIEW) validateSession();
 });
 

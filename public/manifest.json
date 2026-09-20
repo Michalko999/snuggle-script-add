@@ -1,7 +1,7 @@
 {
-  "name": "Moje Úlohy",
-  "short_name": "Úlohy",
-  "description": "Inteligentný nákupný zoznam",
+  "name": "Nákupný zoznam",
+  "short_name": "Zoznam",
+  "description": "Inteligentný nákupný zoznam s rozpoznávaním lístka z fotky",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f8fafc",

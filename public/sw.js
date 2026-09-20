@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moje-ulohy-v5';
+const CACHE_NAME = 'nakupny-zoznam-v6';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -13,36 +13,8 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Push z Cloudflare Workera — funguje aj keď je appka zatvorená
-self.addEventListener('push', (event) => {
-  let data = { title: 'Pripomienka', body: '' };
-  try { if (event.data) data = { ...data, ...event.data.json() }; }
-  catch { if (event.data) data.body = event.data.text(); }
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Pripomienka', {
-      body: data.body || '',
-      icon: 'icon-192.png',
-      badge: 'icon-192.png',
-      tag: 'pripomienka',
-      renotify: true,
-    })
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      const existing = list.find(c => c.url.includes('snuggle-script-add') && 'focus' in c);
-      if (existing) return existing.focus();
-      return clients.openWindow('./');
-    })
-  );
-});
-
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  if (event.request.url.includes('api.anthropic.com')) return;
 
   // Never cache HTML navigations — always fetch fresh so new deploys load correctly
   if (event.request.mode === 'navigate') {

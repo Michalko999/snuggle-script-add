@@ -718,9 +718,9 @@
             <div class="flex items-center gap-2" style="flex-wrap:wrap">
               <div class="search-bar">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" placeholder="Hľadať (evid. č., výkres, dielec, operátor)..." id="spr-search" oninput="renderSprievodky()">
+                <input type="text" placeholder="Hľadať (evid. č., výkres, dielec, operátor)..." id="spr-search" oninput="onSprFilterChange()">
               </div>
-              <select id="spr-year-filter" onchange="renderSprievodky()"></select>
+              <select id="spr-year-filter" onchange="onSprFilterChange()"></select>
               <button class="btn btn-secondary" onclick="document.getElementById('spr-xls-file').click()" title="Import evidencie a materiálov z pôvodného Excel súboru Sprievodky">📥 Import z Excelu</button>
               <input type="file" id="spr-xls-file" accept=".xls,.xlsx" style="display:none" onchange="importSprievodkyXls(this)">
               <button class="btn btn-secondary" onclick="exportSprievodkyExcel()" title="Export evidencie do Excelu">⬇ Export</button>
@@ -740,6 +740,7 @@
                 <tbody id="spr-tbody"></tbody>
               </table>
             </div>
+            <div id="spr-limit-hint" class="text-muted text-sm" style="display:none;padding:10px 0"></div>
             <div id="spr-empty" class="text-muted text-sm" style="display:none;padding:20px 0">Žiadne sprievodky. Vytvor novú tlačidlom „+ Nová sprievodka" alebo importuj z Excelu.</div>
           </div>
         </div>
@@ -1092,7 +1093,8 @@ function saveState() {
   _dirty = true;
   setSyncStatus('syncing', 'Neuložené zmeny…');
   clearTimeout(_autoSaveTimer);
-  _autoSaveTimer = setTimeout(() => { if (_dirty) cloudSave(); }, 3 * 60 * 1000);
+  // Krátke okno — pri páde karty či uspatí mobilu sa stratí nanajvýš pár sekúnd práce
+  _autoSaveTimer = setTimeout(() => { if (_dirty) cloudSave(); }, 3000);
 }
 
 async function cloudSave() {
@@ -1115,15 +1117,29 @@ async function cloudSave() {
   }
 }
 
-// Save on tab close
-window.addEventListener('beforeunload', () => {
+// Uloženie pri odchode zo stránky.
+// sendBeacon tu použiť nemožno — posiela POST a Firebase ho chápe ako pridanie
+// nového potomka, takže zmeny by sa neuložili a v databáze by pribúdali kópie
+// celého stavu. keepalive PUT prežije zatvorenie karty a zapíše na správne miesto.
+// (Limit keepalive je 64 kB; poistkou je uloženie pri prepnutí na pozadie nižšie.)
+function flushSave() {
   if (!_dirty) return;
   try {
-    navigator.sendBeacon
-      ? navigator.sendBeacon(FB_URL, new Blob([JSON.stringify(state)], {type:'application/json'}))
-      : cloudSave();
-  } catch(_) { cloudSave(); }
+    fetch(FB_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+      keepalive: true,
+    }).then(() => { _dirty = false; }).catch(() => {});
+  } catch(_) { /* pri odchode sa už nedá nič iné spraviť */ }
+}
+
+// Na mobile sa karta väčšinou len „schová" a beforeunload nemusí prísť vôbec
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && _dirty) cloudSave();
 });
+window.addEventListener('pagehide', flushSave);
+window.addEventListener('beforeunload', flushSave);
 
 async function cloudLoad() {
   setSyncStatus('loading', 'Načítavam...');
@@ -1152,6 +1168,7 @@ function startRealtimePolling() {
   clearInterval(_realtimeTimer);
   _realtimeTimer = setInterval(async () => {
     if (_dirty) return; // don't overwrite local unsaved changes
+    if (document.visibilityState !== 'visible') return; // na pozadí neťahaj dáta
     try {
       const res = await fetch(FB_URL);
       if (!res.ok) return;
@@ -1255,7 +1272,27 @@ function daysInMonth(y,m) { return new Date(y,m,0).getDate(); }
 function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function attKey(empId,y,m,d) { return `${empId}_${y}_${String(m).padStart(2,'0')}_${String(d).padStart(2,'0')}`; }
 
+// Automatické dopĺňanie odpracovaných dní nesmie siahať pred nástup zamestnanca
+function isEmployed(emp,y,m,d) {
+  if (!emp || !emp.startDate) return true;
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` >= emp.startDate;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Sviatky sa počítali znova v každej iterácii cyklov (stovky prepočtov Veľkej noci
+// pri jednom vykreslení), preto sa výsledok pre daný rok drží v pamäti.
+const _holidayCache = new Map();
 function getSlovakHolidays(year) {
+  if (_holidayCache.has(year)) return _holidayCache.get(year);
+  const result = computeSlovakHolidays(year);
+  _holidayCache.set(year, result);
+  return result;
+}
+
+function computeSlovakHolidays(year) {
   const fixed = [`${year}-01-01`,`${year}-01-06`,`${year}-05-01`,`${year}-05-08`,
     `${year}-07-05`,`${year}-08-29`,`${year}-09-01`,`${year}-09-15`,
     `${year}-11-01`,`${year}-11-17`,`${year}-12-24`,`${year}-12-25`,`${year}-12-26`];
@@ -1324,12 +1361,12 @@ function renderMatrix() {
 
   sortedEmps().forEach(emp => {
     let totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
-    html+=`<tr><td class="col-name">${emp.lastName||''} ${emp.firstName||''}</td>`;
+    html+=`<tr><td class="col-name">${esc(`${emp.lastName||''} ${emp.firstName||''}`)}</td>`;
     for (let d=1;d<=days;d++) {
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       const ak=attKey(emp.id,y,m,d);
       const storedEntry=state.attendance?state.attendance[ak]:undefined;
-      const defaultEntry=(isPast&&!storedEntry)?{type:'P',hours:7.5}:undefined;
+      const defaultEntry=(isPast&&!storedEntry&&isEmployed(emp,y,m,d))?{type:'P',hours:7.5}:undefined;
       const entry=storedEntry||defaultEntry;
 
       const todayCls = d===todayD ? ' today-col' : '';
@@ -1357,9 +1394,9 @@ function renderMatrix() {
         const noteText = (storedEntry&&storedEntry.note) ? (storedEntry.note||'').replace(/[<>"'&]/g, ch=>({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;'}[ch])) : '';
         const hasNote = noteText ? ' has-note' : '';
         const noteAttr = noteText ? ` data-note="${noteText}"` : '';
-        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="duringDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
+        html+=`<td class="day-cell${isDefault?' default-cell':''}${hasNote}${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${esc(`${emp.lastName} ${emp.firstName}`)}"${noteAttr} onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip ${chipClass}" style="${isDefault?'opacity:.5':''}">${label}</div></td>`;
       } else {
-        html+=`<td class="day-cell${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${emp.lastName} ${emp.firstName}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
+        html+=`<td class="day-cell${todayCls}" data-emp="${emp.id}" data-y="${y}" data-m="${m}" data-d="${d}" data-empname="${esc(`${emp.lastName} ${emp.firstName}`)}" onclick="handleCellClick(event,this)" onmousedown="startDrag(event,this)" onmouseenter="onCellEnter(event,this)" onmouseleave="hideTip()"><div class="status-chip s-empty"></div></td>`;
       }
     }
     html+=`<td class="sum-cell">${totalH.toFixed(2)}</td><td class="sum-cell">${totalP}</td><td class="sum-cell green">${totalD>0?totalD:'—'}</td><td class="sum-cell red">${totalPN>0?totalPN:'—'}</td><td class="sum-cell amber">${totalOCR>0?totalOCR:'—'}</td><td class="sum-cell teal">${totalL>0?totalL:'—'}</td></tr>`;
@@ -1590,7 +1627,7 @@ function renderNoiseEmployeeTags() {
   if (!tags) return;
   if (!state.noiseEmployees.length) { tags.innerHTML = '<span style="font-size:.78rem;color:#94A3B8">Žiadni extra zamestnanci</span>'; return; }
   tags.innerHTML = state.noiseEmployees.map((e,i) =>
-    `<span class="noise-emp-tag">${e.name}<button onclick="removeNoiseEmployee(${i})" title="Odstrániť">×</button></span>`
+    `<span class="noise-emp-tag">${esc(e.name)}<button onclick="removeNoiseEmployee(${i})" title="Odstrániť">×</button></span>`
   ).join('');
 }
 
@@ -1653,7 +1690,7 @@ function renderNoiseExcludedTags() {
   if (!excludedEmps.length) { panel.style.display='none'; tags.innerHTML=''; return; }
   panel.style.display='flex';
   tags.innerHTML = excludedEmps.map(e =>
-    `<span class="noise-emp-tag">${`${e.lastName||''} ${e.firstName||''}`.trim()}<button onclick="includeNoiseEmployee('${e.id}')" title="Vrátiť do hluku">+</button></span>`
+    `<span class="noise-emp-tag">${esc(`${e.lastName||''} ${e.firstName||''}`.trim())}<button onclick="includeNoiseEmployee('${e.id}')" title="Vrátiť do hluku">+</button></span>`
   ).join('');
 }
 function renderNoise() {
@@ -1688,7 +1725,7 @@ function renderNoise() {
     const rowStyle = emp.isNoiseOnly ? 'background:#FAFFF5' : '';
     const badge = emp.isNoiseOnly ? ' <span style="font-size:.65rem;background:#DCFCE7;color:#16A34A;border-radius:3px;padding:1px 4px;font-weight:600">H</span>' : '';
     const excludeBtn = emp.isNoiseOnly ? '' : ` <button class="noise-exclude-btn" onclick="excludeNoiseEmployee('${emp.id}')" title="Vylúčiť z hluku (bez nároku)">×</button>`;
-    html+=`<tr style="${rowStyle}"><td class="col-name">${emp.name}${badge}${excludeBtn}</td>`;
+    html+=`<tr style="${rowStyle}"><td class="col-name">${esc(emp.name)}${badge}${excludeBtn}</td>`;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       const nk=`noise_${emp.id}_${y}_${String(m).padStart(2,'0')}_${String(d).padStart(2,'0')}`;
@@ -1703,25 +1740,28 @@ function renderNoise() {
   });
   html+='</tbody>';
   table.innerHTML=html;
-  document.getElementById('noise-summary').innerHTML=`
-    <div class="noise-stat"><div class="noise-stat-label">Hodiny v hluku</div><div class="noise-stat-val">${grandT.toFixed(1)} h</div></div>
-    <div class="noise-stat"><div class="noise-stat-label">Sadzba</div><div class="noise-stat-val">${rate.toFixed(2)} €/h</div></div>
-    <div class="noise-stat"><div class="noise-stat-label">Celková suma</div><div class="noise-stat-val" style="color:var(--green)">${grandA.toFixed(2)} €</div></div>
-    <div class="noise-stat"><div class="noise-stat-label">Zamestnanci</div><div class="noise-stat-val">${allNoiseEmps.length}</div></div>`;
+  document.getElementById('noise-summary').innerHTML=noiseSummaryHtml(grandT, rate, allNoiseEmps.length);
 }
 function saveNoise(input) {
   const key=input.dataset.key;
+  // Snímka pre undo musí vzniknúť PRED zmenou, inak sa vracia už zmenený stav.
+  // Pri sérii úprav stačí jedna snímka na celú dávku.
+  if(!noiseSaveTimer) pushUndo();
   if(input.value===''||isNaN(+input.value)) delete state.noiseHours[key];
   else state.noiseHours[key]=+input.value;
   updateNoiseTotals();
   clearTimeout(noiseSaveTimer);
-  noiseSaveTimer=setTimeout(()=>{ pushUndo(); saveState(); }, 600);
+  noiseSaveTimer=setTimeout(()=>{ noiseSaveTimer=null; saveState(); }, 600);
 }
 function updateNoiseTotals() {
   const rate=+document.getElementById('noise-rate').value||0;
+  let grandT=0, rows=0;
   document.querySelectorAll('#noise-table tbody tr').forEach(row=>{
     let t=0;
-    row.querySelectorAll('input[type="number"]').forEach(inp=>{if(inp.value)t+=+inp.value;});
+    const inputs=row.querySelectorAll('input[type="number"]');
+    if(!inputs.length) return;          // riadok s hláškou "žiadni zamestnanci"
+    inputs.forEach(inp=>{if(inp.value)t+=+inp.value;});
+    grandT+=t; rows++;
     const cells=row.querySelectorAll('td');
     if(cells.length>1){
       const tc=cells[cells.length-2],ac=cells[cells.length-1];
@@ -1729,6 +1769,16 @@ function updateNoiseTotals() {
       if(ac.classList.contains('noise-amount'))ac.textContent=(t*rate).toFixed(2)+' €';
     }
   });
+  const summary=document.getElementById('noise-summary');
+  if(summary) summary.innerHTML=noiseSummaryHtml(grandT, rate, rows);
+}
+
+function noiseSummaryHtml(totalHours, rate, employees) {
+  return `
+    <div class="noise-stat"><div class="noise-stat-label">Hodiny v hluku</div><div class="noise-stat-val">${totalHours.toFixed(1)} h</div></div>
+    <div class="noise-stat"><div class="noise-stat-label">Sadzba</div><div class="noise-stat-val">${rate.toFixed(2)} €/h</div></div>
+    <div class="noise-stat"><div class="noise-stat-label">Celková suma</div><div class="noise-stat-val" style="color:var(--green)">${(totalHours*rate).toFixed(2)} €</div></div>
+    <div class="noise-stat"><div class="noise-stat-label">Zamestnanci</div><div class="noise-stat-val">${employees}</div></div>`;
 }
 
 // ==================== TOOLTIP ====================
@@ -1845,8 +1895,10 @@ function renderEmployees() {
       const eid=seg.slice(0,seg.length-3).join('_');
       const ey=+seg[seg.length-3];
       if(eid!==e.id||ey!==y)return;
-      if(entry.type==='D')vacUsed+=1;
-      if(entry.type==='Dh')vacUsed+=0.5;
+      // Zamietnutá žiadosť nárok neuberá
+      const rejected = entry.approved === false;
+      if(entry.type==='D'&&!rejected)vacUsed+=1;
+      if(entry.type==='Dh'&&!rejected)vacUsed+=0.5;
       if(entry.type==='LD')vacUsed+=0.5;
       if(entry.type==='PN')pnDays+=1;
     });
@@ -1854,8 +1906,8 @@ function renderEmployees() {
     const vacRemain=vacAllowance-vacUsed;
     const vacColor=vacRemain<0?'var(--red)':vacRemain<=3?'var(--amber)':'var(--green)';
     rows+=`<tr>
-      <td style="font-weight:600">${e.lastName||''} ${e.firstName||''}</td>
-      <td>${e.phone?`<a href="tel:${e.phone}" style="color:var(--blue);text-decoration:none">${e.phone}</a>`:''}</td>
+      <td style="font-weight:600">${esc(`${e.lastName||''} ${e.firstName||''}`)}</td>
+      <td>${e.phone?`<a href="tel:${encodeURIComponent(e.phone)}" style="color:var(--blue);text-decoration:none">${esc(e.phone)}</a>`:''}</td>
       <td style="text-align:center">
         <input type="number" min="0" max="365" step="0.5" value="${vacAllowance}"
           style="width:60px;text-align:center;border:1px solid var(--slate-border);border-radius:6px;padding:3px 6px;font-size:.82rem;background:var(--surface)"
@@ -1974,6 +2026,11 @@ function toast(msg,type=''){
 }
 
 // ==================== EXPORTS ====================
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",;\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
 function exportCSV() {
   const {m,y}=getMonthYear('sel-month','sel-year');
   const days=daysInMonth(y,m); const holidays=getSlovakHolidays(y);
@@ -1981,12 +2038,12 @@ function exportCSV() {
   const isPast=(y<now.getFullYear())||(y===now.getFullYear()&&m<now.getMonth()+1);
   let csv=`Zamestnanec,${Array.from({length:days},(_,i)=>i+1).join(',')},Hodiny,Pracovné,D,PN,OČR,L\n`;
   sortedEmps().forEach(emp=>{
-    let row=`${emp.lastName} ${emp.firstName}`,totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
+    let row=csvCell(`${emp.lastName} ${emp.firstName}`),totalH=0,totalP=0,totalD=0,totalPN=0,totalOCR=0,totalL=0;
     for(let d=1;d<=days;d++){
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       if(isHol){row+=',SVK';continue;} if(isWE){row+=',—';continue;}
       const stored=state.attendance&&state.attendance[attKey(emp.id,y,m,d)];
-      const entry=stored||(isPast?{type:'P',hours:7.5}:null);
+      const entry=stored||(isPast&&isEmployed(emp,y,m,d)?{type:'P',hours:7.5}:null);
       if(!entry){row+=',';continue;}
       const t=entry.type,h=entry.hours||7.5;
       row+=','+(t==='P'?h:t);
@@ -2017,7 +2074,7 @@ function exportExcel() {
       const {isWE,isHol}=getDayInfo(y,m,d,holidays);
       if(isHol){row.push('SVK');continue;} if(isWE){row.push('');continue;}
       const stored=state.attendance&&state.attendance[attKey(emp.id,y,m,d)];
-      const entry=stored||(isPast?{type:'P',hours:7.5}:null);
+      const entry=stored||(isPast&&isEmployed(emp,y,m,d)?{type:'P',hours:7.5}:null);
       if(!entry){row.push('');continue;}
       const t=entry.type,h=entry.hours||7.5;
       row.push(t==='P'?h:t);
@@ -2077,6 +2134,7 @@ function fillWorkingDays() {
     const { isWE, isHol } = getDayInfo(y, m, d, holidays);
     if (isWE || isHol) continue;
     sortedEmps().forEach(emp => {
+      if (!isEmployed(emp, y, m, d)) return;
       const ak = attKey(emp.id, y, m, d);
       if (!state.attendance[ak]) {
         state.attendance[ak] = { type: 'P', hours: 7.5 };
@@ -2108,12 +2166,17 @@ function importBackup(input) {
       const data = JSON.parse(e.target.result);
       if (!data.employees && !data.attendance) throw new Error('Neplatný formát');
       if (!confirm(`Importovať zálohu? Nahradí všetky aktuálne dáta.
-Zamestnanci: ${(data.employees||[]).length}`)) return;
+Zamestnanci: ${(data.employees||[]).length}
+Sprievodky: ${(data.sprievodky||[]).length}
+Materiály: ${(data.materialy||[]).length}
+Účty: ${(data.users||[]).length}`)) return;
       pushUndo();
-      state.employees  = Array.isArray(data.employees) ? data.employees : [];
-      state.attendance = (data.attendance && typeof data.attendance==='object') ? data.attendance : {};
-      state.noiseHours = (data.noiseHours && typeof data.noiseHours==='object') ? data.noiseHours : {};
-      saveState(); cloudSave(); renderMatrix(); renderEmployees(); renderNoise();
+      // applyState obnoví celý stav — skôr sa vracali len zamestnanci, dochádzka
+      // a hluk, takže sprievodky, materiály, účty a sadzba sa po obnove stratili.
+      applyState(data);
+      saveState(); cloudSave();
+      renderMatrix(); renderEmployees(); renderNoise(); renderNoiseEmployeeTags(); renderNoiseExcludedTags();
+      if (typeof renderSprievodky === 'function') { renderSprievodky(); renderMaterialy(); }
       document.getElementById('backup-info').textContent = `✓ Importované ${new Date().toLocaleTimeString('sk')}`;
       toast('Záloha importovaná','success');
     } catch(err) { toast('Chyba: ' + err.message, 'error'); }
@@ -2158,8 +2221,9 @@ function computeYearData(y) {
     if (ey !== y || !result[empId]) return;
     const mi = +mm - 1;
     const t = entry.type;
-    if (t === 'D')    { result[empId].months[mi].D  += 1;   result[empId].totals.D  += 1; }
-    if (t === 'Dh')   { result[empId].months[mi].D  += 0.5; result[empId].totals.D  += 0.5; }
+    const rejected = entry.approved === false;   // zamietnutá dovolenka sa nečerpá
+    if (t === 'D'  && !rejected) { result[empId].months[mi].D  += 1;   result[empId].totals.D  += 1; }
+    if (t === 'Dh' && !rejected) { result[empId].months[mi].D  += 0.5; result[empId].totals.D  += 0.5; }
     if (t === 'LD')   { result[empId].months[mi].D  += 0.5; result[empId].totals.D  += 0.5;
                         result[empId].months[mi].L  += 0.5; result[empId].totals.L  += 0.5; }
     if (t === 'PN')   { result[empId].months[mi].PN += 1;   result[empId].totals.PN += 1; }
@@ -2284,7 +2348,7 @@ function renderStats() {
       return `<td style="text-align:center;padding:8px 4px;font-weight:600;color:#16A34A;border-bottom:1px solid var(--slate-border)">${mo.D}</td>`;
     }).join('');
     return `<tr>
-      <td style="padding:8px 16px;font-weight:600;border-bottom:1px solid var(--slate-border)">${emp.name}</td>
+      <td style="padding:8px 16px;font-weight:600;border-bottom:1px solid var(--slate-border)">${esc(emp.name)}</td>
       <td style="text-align:center;padding:8px 4px;border-bottom:1px solid var(--slate-border);color:var(--slate)">${emp.vacationAllowance}</td>
       ${monthCells}
       <td style="text-align:center;padding:8px 8px;font-weight:700;color:var(--blue);background:var(--blue-light);border-bottom:1px solid var(--slate-border)">${total}</td>
@@ -2392,9 +2456,9 @@ function renderImportPreview() {
         const cls = !r.valid ? 'import-row-err' : r.duplicate ? '' : 'import-row-ok';
         const stav = !r.valid ? '❌ Chýba meno' : r.duplicate ? '⚠️ Existuje' : '✅ Nový';
         return `<tr class="${cls}">
-          <td>${i+1}</td><td>${r.lastName}</td><td>${r.firstName}</td>
-          <td>${r.employeeId}</td><td>${r.position}</td><td>${r.phone}</td>
-          <td>${r.vacationDays}</td><td>${stav}</td>
+          <td>${i+1}</td><td>${esc(r.firstName)}</td><td>${esc(r.lastName)}</td>
+          <td>${esc(r.employeeId)}</td><td>${esc(r.position)}</td><td>${esc(r.phone)}</td>
+          <td>${esc(r.vacationDays)}</td><td>${stav}</td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -2558,9 +2622,9 @@ function renderUpcomingEvents() {
     return `<div class="event-row">
       <div class="event-dot" style="background:${ev.cfg.dot}"></div>
       <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.icon} ${ev.cfg.label}</span>
-      <span class="event-name">${ev.empName}${approvalBadge ? ' ' + approvalBadge : ''}</span>
+      <span class="event-name">${esc(ev.empName)}${approvalBadge ? ' ' + approvalBadge : ''}</span>
       <span class="event-date">${dateRange}</span>
-      ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
+      ${ev.note ? `<span class="event-note">— ${esc(ev.note)}</span>` : ''}
       <span class="event-days">${ev.daysLabel}</span>
     </div>`;
   }).join('');
@@ -2623,8 +2687,8 @@ function renderTodayAbsences() {
     <div class="event-row">
       <div class="event-dot" style="background:${ev.cfg.dot}"></div>
       <span class="event-badge" style="background:${ev.cfg.bg};color:${ev.cfg.color}">${ev.cfg.label}</span>
-      <span class="event-name">${ev.empName}</span>
-      ${ev.note ? `<span class="event-note">— ${ev.note}</span>` : ''}
+      <span class="event-name">${esc(ev.empName)}</span>
+      ${ev.note ? `<span class="event-note">— ${esc(ev.note)}</span>` : ''}
     </div>`).join('');
 }
 
@@ -2699,6 +2763,11 @@ const SPR_SEED_MATERIALY = [
   {"vykres":"00 1859 000 460","nazov":"Zmontovaný predtlmič","postup":"","zapisal":"","komponenty":[{"nazov": "Kotúč unášací - J. Haupt", "vykres": "00 1847 035 102"},{"nazov": "Medzikotúč", "vykres": "00 1819 275 001"},{"nazov": "pružina tlačná", "vykres": "00 1830 801 000"},{"nazov": "Krycí plech - J. Haupt", "vykres": "00 1843 086 003"}]}
 ];
 
+const SPR_PAGE = 300;
+let _sprLimit = SPR_PAGE;
+function showMoreSprievodky() { _sprLimit += SPR_PAGE; renderSprievodky(); }
+function onSprFilterChange() { _sprLimit = SPR_PAGE; renderSprievodky(); }
+
 let _sprIdSeq = 0;
 function sprId(prefix) { return `${prefix || 'spr'}_${Date.now().toString(36)}_${(_sprIdSeq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 function sprEsc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
@@ -2769,7 +2838,22 @@ function renderSprievodky() {
     <div class="spr-sum-chip">Materiálov v katalógu<strong>${(state.materialy || []).length}</strong></div>`;
 
   document.getElementById('spr-empty').style.display = list.length ? 'none' : '';
-  tbody.innerHTML = list.map(s => {
+
+  // Pri tisícoch záznamov nemá zmysel vykresľovať všetko naraz — na mobile to
+  // trvá sekundy. Zvyšok sa dá dohľadať filtrom alebo dotiahnuť tlačidlom.
+  const shown = list.slice(0, _sprLimit);
+  const hint = document.getElementById('spr-limit-hint');
+  if (hint) {
+    if (list.length > shown.length) {
+      hint.style.display = '';
+      hint.innerHTML = `Zobrazených ${shown.length} z ${list.length} sprievodiek — zúž výber hľadaním alebo rokom.
+        <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="showMoreSprievodky()">Zobraziť ďalších 300</button>`;
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+
+  tbody.innerHTML = shown.map(s => {
     const komp = Array.isArray(s.komponenty) ? s.komponenty : [];
     const kompTip = komp.map(k => `${k.nazov} (${k.vykres})`).join('\n');
     return `<tr>
@@ -3208,9 +3292,42 @@ window.PUBLIC_VIEW = false;
 const AUTH_KEY = 'dochadzka_session_v1';
 let currentUser = null;
 
+// Heslá sa odvodzujú PBKDF2-SHA256 so soľou. Staršie účty majú v poli `pass`
+// nesolený SHA-256 — ten sa pri najbližšom úspešnom prihlásení ticho prepíše
+// na nový formát, takže netreba nič resetovať ručne.
+const PBKDF2_ITER = 210000;
+
 async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function toHex(bytes) {
+  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function randomSalt() {
+  return toHex(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+async function pbkdf2(password, saltHex) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITER, hash: 'SHA-256' }, key, 256);
+  return toHex(bits);
+}
+
+async function setUserPassword(user, password) {
+  user.salt = randomSalt();
+  user.hash = await pbkdf2(password, user.salt);
+  delete user.pass;           // starý nesolený hash už netreba držať
+}
+
+async function verifyPassword(user, password) {
+  if (user.salt && user.hash) return (await pbkdf2(password, user.salt)) === user.hash;
+  if (user.pass) return (await sha256(password)) === user.pass;
+  return false;
 }
 
 function getUsers() { return Array.isArray(state.users) ? state.users : []; }
@@ -3222,15 +3339,29 @@ async function tryLogin() {
   const err   = document.getElementById('login-error');
   err.textContent = '';
   if (!uname || !pass) { err.textContent = 'Zadajte prihlasovacie meno aj heslo.'; return; }
-  const hash = await sha256(pass);
-  let user = getUsers().find(u => (u.username || '').toLowerCase() === uname);
-  // Bootstrap: first ever login creates the admin account (Michal Johanes)
-  if (!user && !getUsers().length && uname === 'michal' && pass === 'dkt2026') {
-    user = { username: 'michal', name: 'Michal Johanes', role: 'admin', pass: hash };
-    state.users = [user];
+
+  // Prvé spustenie: zatiaľ neexistuje žiadny účet, takže sa z prvého prihlásenia
+  // stane administrátor. Žiadne heslo nie je zapísané v zdrojovom kóde.
+  if (!getUsers().length) {
+    if (pass.length < 5) { err.textContent = 'Zvoľte heslo s aspoň 5 znakmi — vytvorí sa prvý administrátorský účet.'; return; }
+    const admin = { username: uname, name: uname, role: 'admin' };
+    await setUserPassword(admin, pass);
+    state.users = [admin];
     saveState(); cloudSave();
+    currentUser = { username: admin.username, name: admin.name, role: admin.role };
+    try { localStorage.setItem(AUTH_KEY, JSON.stringify(currentUser)); } catch(e) {}
+    document.getElementById('login-pass').value = '';
+    applyAuthUI();
+    toast('Vytvorený administrátorský účet ✅', 'success');
+    return;
   }
-  if (!user || user.pass !== hash) { err.textContent = 'Nesprávne prihlasovacie meno alebo heslo.'; return; }
+
+  const user = getUsers().find(u => (u.username || '').toLowerCase() === uname);
+  if (!user || !(await verifyPassword(user, pass))) {
+    err.textContent = 'Nesprávne prihlasovacie meno alebo heslo.'; return;
+  }
+  // Tichý prechod starého nesoleného hesla na PBKDF2
+  if (!user.salt) { await setUserPassword(user, pass); saveState(); cloudSave(); }
   currentUser = { username: user.username, name: user.name, role: user.role };
   try { localStorage.setItem(AUTH_KEY, JSON.stringify(currentUser)); } catch(e) {}
   document.getElementById('login-pass').value = '';
@@ -3291,13 +3422,15 @@ function renderUsers() {
   const tbody = document.getElementById('users-tbody');
   if (!tbody) return;
   if (!getUsers().length) { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--slate)">Žiadne účty.</td></tr>'; return; }
-  tbody.innerHTML = getUsers().map((u, i) => `<tr>
-    <td>${u.name}</td>
-    <td>${u.username}</td>
+  // Akcie sa viažu na prihlasovacie meno, nie na poradie v poli — medzi
+  // vykreslením a klikom môže polling prepísať state.users a index by sedel inde.
+  tbody.innerHTML = getUsers().map(u => `<tr>
+    <td>${esc(u.name)}</td>
+    <td>${esc(u.username)}</td>
     <td><span class="badge ${u.role==='admin'?'badge-blue':''}" style="${u.role!=='admin'?'background:var(--slate-light);color:var(--slate)':''}">${u.role==='admin'?'Administrátor':'Používateľ'}</span></td>
     <td>
-      <button class="btn btn-secondary btn-sm" onclick="resetUserPassword(${i})">🔑 Reset hesla</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteUser(${i})" ${currentUser && u.username===currentUser.username ? 'disabled title="Vlastný účet nemožno zmazať"' : ''}>🗑 Zmazať</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetUserPassword('${esc(u.username)}')">🔑 Reset hesla</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(u.username)}')" ${currentUser && u.username===currentUser.username ? 'disabled title="Vlastný účet nemožno zmazať"' : ''}>🗑 Zmazať</button>
     </td>
   </tr>`).join('');
 }
@@ -3311,31 +3444,33 @@ async function createUser() {
   if (!name || !login || !pass) { toast('Vyplňte všetky polia', 'error'); return; }
   if (pass.length < 5) { toast('Heslo musí mať aspoň 5 znakov', 'error'); return; }
   if (getUsers().some(u => (u.username || '').toLowerCase() === login)) { toast('Toto prihlasovacie meno už existuje', 'error'); return; }
-  state.users.push({ username: login, name, role, pass: await sha256(pass) });
+  const rec = { username: login, name, role };
+  await setUserPassword(rec, pass);
+  state.users.push(rec);
   saveState(); cloudSave(); renderUsers();
   ['new-user-name','new-user-login','new-user-pass'].forEach(id => document.getElementById(id).value = '');
   toast(`Účet ${login} vytvorený ✅`, 'success');
 }
 
-async function resetUserPassword(i) {
+async function resetUserPassword(username) {
   if (!isAdmin()) return;
-  const u = state.users[i];
-  if (!u) return;
+  const u = state.users.find(x => x.username === username);
+  if (!u) { toast('Účet už neexistuje', 'error'); renderUsers(); return; }
   const np = prompt(`Nové heslo pre ${u.name} (min. 5 znakov):`);
   if (np === null) return;
   if (np.length < 5) { toast('Heslo musí mať aspoň 5 znakov', 'error'); return; }
-  u.pass = await sha256(np);
+  await setUserPassword(u, np);
   saveState(); cloudSave();
   toast(`Heslo pre ${u.username} zmenené ✅`, 'success');
 }
 
-function deleteUser(i) {
+function deleteUser(username) {
   if (!isAdmin()) return;
-  const u = state.users[i];
-  if (!u) return;
+  const u = state.users.find(x => x.username === username);
+  if (!u) { toast('Účet už neexistuje', 'error'); renderUsers(); return; }
   if (currentUser && u.username === currentUser.username) { toast('Nemôžete zmazať vlastný účet', 'error'); return; }
   if (!confirm(`Zmazať účet ${u.name} (${u.username})?`)) return;
-  state.users.splice(i, 1);
+  state.users = state.users.filter(x => x.username !== username);
   saveState(); cloudSave(); renderUsers();
   toast('Účet zmazaný');
 }
@@ -3346,11 +3481,11 @@ async function changeMyPassword() {
   if (!rec) return;
   const old = prompt('Aktuálne heslo:');
   if (old === null) return;
-  if (await sha256(old) !== rec.pass) { toast('Nesprávne aktuálne heslo', 'error'); return; }
+  if (!(await verifyPassword(rec, old))) { toast('Nesprávne aktuálne heslo', 'error'); return; }
   const np = prompt('Nové heslo (min. 5 znakov):');
   if (np === null) return;
   if (np.length < 5) { toast('Heslo musí mať aspoň 5 znakov', 'error'); return; }
-  rec.pass = await sha256(np);
+  await setUserPassword(rec, np);
   saveState(); cloudSave();
   toast('Heslo zmenené ✅', 'success');
 }
@@ -3445,7 +3580,7 @@ function renderPendingApprovals() {
       <div class="approval-item-dot"></div>
       <span class="approval-item-type">${typeLabel}</span>
       <span class="approval-item-date">${dateStr}</span>
-      <span class="approval-item-name">${g.empName}</span>
+      <span class="approval-item-name">${esc(g.empName)}</span>
       ${noteHtml}
       <div class="approval-item-actions">
         <button class="btn-approve" onclick="quickApprove('${aksCsv}',true)">✅ Schváliť</button>

@@ -16,6 +16,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  // Volania na Cloudflare Worker (AI, synchronizácia zoznamu) nechaj tak —
+  // sú to dáta, nie statické súbory, a cachovať ich nedáva zmysel.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
+
   // Never cache HTML navigations — always fetch fresh so new deploys load correctly
   if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));

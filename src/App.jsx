@@ -217,9 +217,17 @@ function normalizeItem(item) {
     qty: item.qty ?? "",
     completed: !!item.completed,
     category: CATEGORIES.includes(item.category) ? item.category : "Iné",
+    createdAt: item.createdAt ?? item.updatedAt ?? 0,
     updatedAt: item.updatedAt ?? 0,
     deleted: !!item.deleted,
   };
+}
+
+// Poradie musí vyjsť rovnako na každom zariadení, inak si dva mobily
+// donekonečna prepisujú zoznam len kvôli inému poradiu tých istých položiek.
+function sortItems(items) {
+  return [...items].sort((a, b) =>
+    (b.createdAt - a.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 // Zlúčenie dvoch zoznamov: pri rovnakom id vyhráva novšia zmena.
@@ -231,7 +239,7 @@ function mergeLists(local, remote) {
     if (!prev || item.updatedAt > prev.updatedAt) byId.set(item.id, item);
   });
   const cutoff = Date.now() - TOMBSTONE_MS;
-  return [...byId.values()].filter(it => !(it.deleted && it.updatedAt < cutoff));
+  return sortItems([...byId.values()].filter(it => !(it.deleted && it.updatedAt < cutoff)));
 }
 
 // ── Components ───────────────────────────────────────────────────
@@ -452,7 +460,7 @@ export default function App() {
     // Kľúč sa kedysi držal v prehliadači; teraz žije vo Workeri, tak ho odtiaľto zmažeme.
     localStorage.removeItem(LEGACY_APIKEY_KEY);
 
-    setTodos(loadJSON(STORAGE_KEY, []).map(normalizeItem));
+    setTodos(sortItems(loadJSON(STORAGE_KEY, []).map(normalizeItem)));
     setPrefs(loadJSON(PREFS_KEY, {}));
     const storedSortMode = localStorage.getItem(SORT_MODE_KEY);
     if (storedSortMode !== null) setSortByCategory(storedSortMode === "true");
@@ -514,14 +522,23 @@ export default function App() {
     }
   }, []);
 
+  // Po stiahnutí skúsime aj odoslať — inak by zmena spravená offline ležala
+  // v mobile dovtedy, kým sa zoznamu znova nedotkneš.
+  const syncNow = useCallback(async () => { await pull(); await push(); }, [pull, push]);
+
   useEffect(() => {
     if (!hydrated || !configured) return;
-    pull();
-    const iv = setInterval(() => { if (document.visibilityState === "visible") pull(); }, 15000);
-    const onVisible = () => { if (document.visibilityState === "visible") pull(); };
+    syncNow();
+    const iv = setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, 15000);
+    const onVisible = () => { if (document.visibilityState === "visible") syncNow(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVisible); };
-  }, [hydrated, configured, pull]);
+    window.addEventListener("online", syncNow);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", syncNow);
+    };
+  }, [hydrated, configured, syncNow]);
 
   useEffect(() => {
     if (!hydrated || !configured) return;
@@ -592,7 +609,8 @@ export default function App() {
     setInput("");
     const id = crypto.randomUUID();
     const pref = prefs[normalize(text)];
-    setTodos(prev => [normalizeItem({ id, text, category: pref ?? "Iné", updatedAt: Date.now() }), ...prev]);
+    const now = Date.now();
+    setTodos(prev => sortItems([normalizeItem({ id, text, category: pref ?? "Iné", createdAt: now, updatedAt: now }), ...prev]));
     if (pref || !configured || !sortByCategory) return;
     try {
       const category = await categorizeItem(text);
@@ -629,13 +647,14 @@ export default function App() {
         const key = normalize(text);
         if (seen.has(key)) { skipped++; return; }
         seen.add(key);
+        const now = Date.now();
         fresh.push(normalizeItem({
           id: crypto.randomUUID(), text, qty: (i.qty ?? "").trim(),
-          category: prefs[key] ?? i.category, updatedAt: Date.now(),
+          category: prefs[key] ?? i.category, createdAt: now, updatedAt: now,
         }));
       });
 
-      if (fresh.length) setTodos(prev => [...fresh, ...prev]);
+      if (fresh.length) setTodos(prev => sortItems([...fresh, ...prev]));
       showNotice(
         skipped
           ? `Pridaných ${fresh.length} · ${skipped} už v zozname bolo`

@@ -2,33 +2,63 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 const CATEGORIES = [
   "Ovocie a zelenina",
-  "Mliečne výrobky",
-  "Mäso a ryby",
   "Pečivo",
-  "Cestoviny, ryža, múka",
-  "Konzervy a omáčky",
-  "Sladkosti a snacky",
-  "Nápoje",
+  "Mlieko, syry, maslo",
+  "Jogurty a dezerty",
+  "Mäso a hydina",
+  "Údeniny a šunka",
+  "Ryby",
   "Mrazené",
-  "Drogéria a domácnosť",
+  "Cestoviny a ryža",
+  "Múka, cukor, pečenie",
+  "Konzervy a omáčky",
+  "Sladkosti",
+  "Slané snacky",
+  "Nápoje",
+  "Káva a čaj",
+  "Alkohol",
+  "Drogéria a hygiena",
+  "Domácnosť a čistenie",
   "Iné",
 ];
 
-const CATEGORY_STYLES = {
-  "Ovocie a zelenina":     { dot: "#10b981", chip: { bg: "#ecfdf5", color: "#047857", border: "#a7f3d0" } },
-  "Mliečne výrobky":       { dot: "#38bdf8", chip: { bg: "#f0f9ff", color: "#0369a1", border: "#bae6fd" } },
-  "Mäso a ryby":           { dot: "#f43f5e", chip: { bg: "#fff1f2", color: "#be123c", border: "#fecdd3" } },
-  "Pečivo":                { dot: "#f59e0b", chip: { bg: "#fffbeb", color: "#b45309", border: "#fde68a" } },
-  "Cestoviny, ryža, múka": { dot: "#eab308", chip: { bg: "#fefce8", color: "#854d0e", border: "#fef08a" } },
-  "Konzervy a omáčky":     { dot: "#f97316", chip: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" } },
-  "Sladkosti a snacky":    { dot: "#ec4899", chip: { bg: "#fdf2f8", color: "#be185d", border: "#fbcfe8" } },
-  "Nápoje":                { dot: "#06b6d4", chip: { bg: "#ecfeff", color: "#0e7490", border: "#a5f3fc" } },
-  "Mrazené":               { dot: "#818cf8", chip: { bg: "#eef2ff", color: "#4338ca", border: "#c7d2fe" } },
-  "Drogéria a domácnosť":  { dot: "#a855f7", chip: { bg: "#faf5ff", color: "#7e22ce", border: "#e9d5ff" } },
-  "Iné":                   { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
+// Staršie, hrubšie kategórie. Položky a naučené opravy z nich prenesieme
+// do najbližšej novej kategórie, nech nespadnú do „Iné".
+const LEGACY_CATEGORIES = {
+  "Mliečne výrobky": "Mlieko, syry, maslo",
+  "Mäso a ryby": "Mäso a hydina",
+  "Cestoviny, ryža, múka": "Cestoviny a ryža",
+  "Sladkosti a snacky": "Sladkosti",
+  "Drogéria a domácnosť": "Drogéria a hygiena",
 };
 
-const APP_VERSION = "2.0";
+function migrateCategory(category) {
+  return LEGACY_CATEGORIES[category] ?? category;
+}
+
+const CATEGORY_STYLES = {
+  "Ovocie a zelenina":    { dot: "#10b981", chip: { bg: "#ecfdf5", color: "#047857", border: "#a7f3d0" } },
+  "Pečivo":               { dot: "#f59e0b", chip: { bg: "#fffbeb", color: "#b45309", border: "#fde68a" } },
+  "Mlieko, syry, maslo":  { dot: "#38bdf8", chip: { bg: "#f0f9ff", color: "#0369a1", border: "#bae6fd" } },
+  "Jogurty a dezerty":    { dot: "#3b82f6", chip: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" } },
+  "Mäso a hydina":        { dot: "#f43f5e", chip: { bg: "#fff1f2", color: "#be123c", border: "#fecdd3" } },
+  "Údeniny a šunka":      { dot: "#ef4444", chip: { bg: "#fef2f2", color: "#b91c1c", border: "#fecaca" } },
+  "Ryby":                 { dot: "#14b8a6", chip: { bg: "#f0fdfa", color: "#0f766e", border: "#99f6e4" } },
+  "Mrazené":              { dot: "#818cf8", chip: { bg: "#eef2ff", color: "#4338ca", border: "#c7d2fe" } },
+  "Cestoviny a ryža":     { dot: "#eab308", chip: { bg: "#fefce8", color: "#854d0e", border: "#fef08a" } },
+  "Múka, cukor, pečenie": { dot: "#d4a373", chip: { bg: "#fdf6ec", color: "#a16207", border: "#f0dcc0" } },
+  "Konzervy a omáčky":    { dot: "#f97316", chip: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" } },
+  "Sladkosti":            { dot: "#ec4899", chip: { bg: "#fdf2f8", color: "#be185d", border: "#fbcfe8" } },
+  "Slané snacky":         { dot: "#d946ef", chip: { bg: "#fdf4ff", color: "#a21caf", border: "#f5d0fe" } },
+  "Nápoje":               { dot: "#06b6d4", chip: { bg: "#ecfeff", color: "#0e7490", border: "#a5f3fc" } },
+  "Káva a čaj":           { dot: "#78350f", chip: { bg: "#f5efe9", color: "#78350f", border: "#e5d3c3" } },
+  "Alkohol":              { dot: "#7c3aed", chip: { bg: "#f5f3ff", color: "#6d28d9", border: "#ddd6fe" } },
+  "Drogéria a hygiena":   { dot: "#a855f7", chip: { bg: "#faf5ff", color: "#7e22ce", border: "#e9d5ff" } },
+  "Domácnosť a čistenie": { dot: "#22c55e", chip: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" } },
+  "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
+};
+
+const APP_VERSION = "2.1";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -65,6 +95,39 @@ function normalize(text) {
 
 function loadJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+}
+
+// Naučené opravy ukazujú na názvy kategórií, tak ich po premenovaní prepíšeme.
+function migratePrefs(stored) {
+  const next = {};
+  let changed = false;
+  Object.entries(stored ?? {}).forEach(([key, value]) => {
+    const category = migrateCategory(value);
+    if (CATEGORIES.includes(category)) next[key] = category;
+    if (category !== value || !CATEGORIES.includes(category)) changed = true;
+  });
+  if (changed) localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+  return next;
+}
+
+// Vlastné poradie kategórií si nechávame; nové kategórie doplníme k tej,
+// vedľa ktorej sú v predvolenom poradí, nie na koniec zoznamu.
+function mergeCatOrder(stored) {
+  const order = [];
+  stored.forEach(value => {
+    const category = migrateCategory(value);
+    if (CATEGORIES.includes(category) && !order.includes(category)) order.push(category);
+  });
+  CATEGORIES.forEach((category, i) => {
+    if (order.includes(category)) return;
+    let at = -1; // bez predchodcu ide kategória na začiatok
+    for (let j = i - 1; j >= 0; j--) {
+      const found = order.indexOf(CATEGORIES[j]);
+      if (found !== -1) { at = found; break; }
+    }
+    order.splice(at + 1, 0, category);
+  });
+  return order;
 }
 
 // ── Anthropic cez vlastný Cloudflare Worker ──────────────────────
@@ -145,7 +208,11 @@ PRAVIDLÁ:
 2. Ignoruj prečiarknuté položky
 3. Množstvo a jednotku ("2x", "1 L", "500 g") daj do poľa "qty"; v poli "text" nechaj iba názov položky. Ak množstvo nie je uvedené, "qty" nechaj prázdne
 4. Jednoslovné skratky dokonči len ak je to jednoznačné (napr. "toaletný" → "toaletný papier")
-5. Každej položke prirad kategóriu zo zoznamu povolených hodnôt`;
+5. Každej položke prirad najpresnejšiu kategóriu zo zoznamu povolených hodnôt.
+   Rozhoduje oddelenie v obchode, nie surovina: mrazená zelenina patrí do „Mrazené",
+   saláma a šunka do „Údeniny a šunka", čokoláda do „Sladkosti", chipsy do „Slané snacky",
+   pivo a víno do „Alkohol", mlieko a syry do „Mlieko, syry, maslo", jogurt do „Jogurty a dezerty".
+   „Iné" použi len vtedy, keď sa položka naozaj nikam nehodí`;
 
   const data = await callAnthropic({
     model: SCAN_MODEL,
@@ -179,7 +246,11 @@ async function categorizeItem(text) {
   const data = await callAnthropic({
     model: CATEGORIZE_MODEL,
     max_tokens: 256,
-    system: "Zaraď položku nákupného zoznamu do jednej z povolených kategórií.",
+    system: `Zaraď položku nákupného zoznamu do najpresnejšej z povolených kategórií.
+Rozhoduje oddelenie v obchode, nie surovina: mrazená zelenina patrí do „Mrazené",
+saláma a šunka do „Údeniny a šunka", čokoláda do „Sladkosti", chipsy do „Slané snacky",
+pivo a víno do „Alkohol", mlieko a syry do „Mlieko, syry, maslo", jogurt do „Jogurty a dezerty".
+„Iné" použi len vtedy, keď sa položka naozaj nikam nehodí.`,
     output_config: { format: { type: "json_schema", schema: CATEGORY_SCHEMA } },
     messages: [{ role: "user", content: text }],
   });
@@ -211,12 +282,13 @@ async function putList(items) {
 }
 
 function normalizeItem(item) {
+  const category = migrateCategory(item.category);
   return {
     id: item.id ?? crypto.randomUUID(),
     text: item.text ?? "",
     qty: item.qty ?? "",
     completed: !!item.completed,
-    category: CATEGORIES.includes(item.category) ? item.category : "Iné",
+    category: CATEGORIES.includes(category) ? category : "Iné",
     createdAt: item.createdAt ?? item.updatedAt ?? 0,
     updatedAt: item.updatedAt ?? 0,
     deleted: !!item.deleted,
@@ -281,7 +353,7 @@ function SettingsModal({ catOrder, onMoveCategory, onSave, onClose }) {
         <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "8px", lineHeight: 1.5 }}>
           Zoraď ich tak, ako chodíš obchodom.
         </p>
-        <div style={{ border: "1px solid #e2e8f0", borderRadius: "0.5rem", marginBottom: "1.25rem", overflow: "hidden" }}>
+        <div style={{ border: "1px solid #e2e8f0", borderRadius: "0.5rem", marginBottom: "1.25rem", maxHeight: 260, overflowY: "auto" }}>
           {catOrder.map((cat, i) => (
             <div key={cat} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.5rem 0.35rem 0.7rem", borderBottom: i < catOrder.length - 1 ? "1px solid #f1f5f9" : "none" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: CATEGORY_STYLES[cat]?.dot ?? "#94a3b8", flexShrink: 0 }} />
@@ -461,14 +533,15 @@ export default function App() {
     localStorage.removeItem(LEGACY_APIKEY_KEY);
 
     setTodos(sortItems(loadJSON(STORAGE_KEY, []).map(normalizeItem)));
-    setPrefs(loadJSON(PREFS_KEY, {}));
+    setPrefs(migratePrefs(loadJSON(PREFS_KEY, {})));
     const storedSortMode = localStorage.getItem(SORT_MODE_KEY);
     if (storedSortMode !== null) setSortByCategory(storedSortMode === "true");
 
     const storedOrder = loadJSON(CAT_ORDER_KEY, null);
     if (Array.isArray(storedOrder)) {
-      const known = storedOrder.filter(c => CATEGORIES.includes(c));
-      setCatOrder([...known, ...CATEGORIES.filter(c => !known.includes(c))]);
+      const order = mergeCatOrder(storedOrder);
+      setCatOrder(order);
+      localStorage.setItem(CAT_ORDER_KEY, JSON.stringify(order));
     }
 
     setConfigured(!!workerBase());

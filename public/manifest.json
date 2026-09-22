@@ -4,8 +4,8 @@
   "description": "Inteligentný nákupný zoznam s rozpoznávaním lístka z fotky",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#4f46e5",
+  "background_color": "#e9e3d6",
+  "theme_color": "#e9e3d6",
   "orientation": "portrait",
   "icons": [
     {

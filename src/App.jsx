@@ -36,7 +36,29 @@ function migrateCategory(category) {
   return LEGACY_CATEGORIES[category] ?? category;
 }
 
-const APP_VERSION = "2.2";
+const CATEGORY_STYLES = {
+  "Ovocie a zelenina":    { dot: "#10b981", chip: { bg: "#ecfdf5", color: "#047857", border: "#a7f3d0" } },
+  "Pečivo":               { dot: "#f59e0b", chip: { bg: "#fffbeb", color: "#b45309", border: "#fde68a" } },
+  "Mlieko, syry, maslo":  { dot: "#38bdf8", chip: { bg: "#f0f9ff", color: "#0369a1", border: "#bae6fd" } },
+  "Jogurty a dezerty":    { dot: "#3b82f6", chip: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" } },
+  "Mäso a hydina":        { dot: "#f43f5e", chip: { bg: "#fff1f2", color: "#be123c", border: "#fecdd3" } },
+  "Údeniny a šunka":      { dot: "#ef4444", chip: { bg: "#fef2f2", color: "#b91c1c", border: "#fecaca" } },
+  "Ryby":                 { dot: "#14b8a6", chip: { bg: "#f0fdfa", color: "#0f766e", border: "#99f6e4" } },
+  "Mrazené":              { dot: "#818cf8", chip: { bg: "#eef2ff", color: "#4338ca", border: "#c7d2fe" } },
+  "Cestoviny a ryža":     { dot: "#eab308", chip: { bg: "#fefce8", color: "#854d0e", border: "#fef08a" } },
+  "Múka, cukor, pečenie": { dot: "#d4a373", chip: { bg: "#fdf6ec", color: "#a16207", border: "#f0dcc0" } },
+  "Konzervy a omáčky":    { dot: "#f97316", chip: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" } },
+  "Sladkosti":            { dot: "#ec4899", chip: { bg: "#fdf2f8", color: "#be185d", border: "#fbcfe8" } },
+  "Slané snacky":         { dot: "#d946ef", chip: { bg: "#fdf4ff", color: "#a21caf", border: "#f5d0fe" } },
+  "Nápoje":               { dot: "#06b6d4", chip: { bg: "#ecfeff", color: "#0e7490", border: "#a5f3fc" } },
+  "Káva a čaj":           { dot: "#78350f", chip: { bg: "#f5efe9", color: "#78350f", border: "#e5d3c3" } },
+  "Alkohol":              { dot: "#7c3aed", chip: { bg: "#f5f3ff", color: "#6d28d9", border: "#ddd6fe" } },
+  "Drogéria a hygiena":   { dot: "#a855f7", chip: { bg: "#faf5ff", color: "#7e22ce", border: "#e9d5ff" } },
+  "Domácnosť a čistenie": { dot: "#22c55e", chip: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" } },
+  "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
+};
+
+const APP_VERSION = "2.1";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -294,72 +316,69 @@ function mergeLists(local, remote) {
 
 // ── Components ───────────────────────────────────────────────────
 
-// Číslo uličky = poradie kategórie v obchode (nastavuje sa v ⚙️).
-function aisleNumber(catOrder, category) {
-  return String(catOrder.indexOf(category) + 1).padStart(2, "0");
-}
-
-const monoMeta = { fontFamily: "var(--mono)", fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" };
-const lineInput = {
-  minWidth: 0, height: 40, padding: "0 2px", border: "none", borderBottom: "2px solid var(--ink)",
-  outline: "none", background: "transparent", fontSize: 16, color: "var(--ink)",
-};
-const pillButton = (filled) => ({
-  height: 40, padding: "0 16px", borderRadius: 999, cursor: "pointer", fontSize: 14, fontWeight: 500,
-  border: "1.5px solid var(--ink)", background: filled ? "var(--ink)" : "transparent", color: filled ? "var(--paper)" : "var(--ink)",
-});
-
-function SettingsModal({ catOrder, onMoveCategory, sortByCategory, onToggleSort, onSave, onClose }) {
+function SettingsModal({ catOrder, onMoveCategory, onSave, onClose }) {
   const [proxy, setProxy] = useState(() => localStorage.getItem(PROXY_KEY) ?? "");
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
-  const label = { ...monoMeta, marginBottom: 4 };
-  const hint = { fontSize: 13, color: "var(--muted)", marginBottom: 6, lineHeight: 1.5 };
-  const arrow = disabled => ({
-    width: 36, height: 36, borderRadius: "50%", border: "1.5px solid var(--line)", background: "transparent",
-    color: "var(--ink-2)", fontSize: 11, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.35 : 1,
-  });
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(42,37,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
-      <div style={{ background: "var(--paper)", borderRadius: 6, padding: "22px 20px", maxWidth: 440, width: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 24px 60px -20px rgba(60,45,30,0.5)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", paddingBottom: 12, marginBottom: 16, borderBottom: "1.5px dashed var(--rule)" }}>
-          <h2 style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontWeight: 500, fontSize: 28, letterSpacing: "-0.02em" }}>Nastavenia</h2>
-          <span style={monoMeta}>v{APP_VERSION}</span>
-        </div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "1rem" }}>
+      <div style={{ background: "#fff", borderRadius: "1rem", padding: "1.5rem", maxWidth: 440, width: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+        <h2 style={{ fontSize: "1.125rem", fontWeight: 700, marginBottom: "1rem", color: "#1e293b" }}>Nastavenia</h2>
 
-        <p style={label}>URL Cloudflare Workera</p>
-        <p style={hint}>Worker drží Anthropic kľúč a synchronizuje zoznam. Postup je v súbore <strong>cloudflare-worker.js</strong> v repozitári.</p>
-        <input type="url" value={proxy} onChange={e => setProxy(e.target.value)} autoFocus
-          placeholder="https://moj-worker.username.workers.dev" className="input-line"
-          style={{ ...lineInput, width: "100%", marginBottom: 18 }} />
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>URL Cloudflare Workera</p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "6px", lineHeight: 1.5 }}>
+          Worker drží Anthropic kľúč a synchronizuje zoznam. Postup je v súbore <strong>cloudflare-worker.js</strong> v repozitári.
+        </p>
+        <input
+          type="url"
+          value={proxy}
+          onChange={e => setProxy(e.target.value)}
+          placeholder="https://moj-worker.username.workers.dev"
+          style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem 0.8rem", fontSize: "0.875rem", outline: "none", marginBottom: "1rem", boxSizing: "border-box" }}
+          autoFocus
+        />
 
-        <p style={label}>Prístupový token</p>
-        <p style={hint}>To isté heslo, aké má Worker v premennej <code>APP_TOKEN</code>.</p>
-        <input type="password" value={token} onChange={e => setToken(e.target.value)}
-          placeholder="heslo z APP_TOKEN" className="input-line"
-          style={{ ...lineInput, width: "100%", marginBottom: 20 }} />
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Prístupový token</p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "6px", lineHeight: 1.5 }}>
+          To isté heslo, aké má Worker v premennej <code>APP_TOKEN</code>.
+        </p>
+        <input
+          type="password"
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          placeholder="heslo z APP_TOKEN"
+          style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem 0.8rem", fontSize: "0.875rem", outline: "none", marginBottom: "1.25rem", boxSizing: "border-box" }}
+        />
 
-        <label style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 44, marginBottom: 14, cursor: "pointer", fontSize: 15 }}>
-          <input type="checkbox" checked={sortByCategory} onChange={onToggleSort}
-            style={{ width: 22, height: 22, accentColor: "var(--brick)", flexShrink: 0 }} />
-          Triediť položky do uličiek
-        </label>
-
-        <p style={label}>Poradie uličiek</p>
-        <p style={hint}>Zoraď ich tak, ako chodíš obchodom — podľa toho sa očíslujú.</p>
-        <div style={{ borderTop: "1.5px dashed var(--rule)", borderBottom: "1.5px dashed var(--rule)", marginBottom: 20, maxHeight: 264, overflowY: "auto" }}>
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Poradie kategórií</p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "8px", lineHeight: 1.5 }}>
+          Zoraď ich tak, ako chodíš obchodom.
+        </p>
+        <div style={{ border: "1px solid #e2e8f0", borderRadius: "0.5rem", marginBottom: "1.25rem", maxHeight: 260, overflowY: "auto" }}>
           {catOrder.map((cat, i) => (
-            <div key={cat} style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 44 }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 500, color: "var(--brick)", width: 20 }}>{String(i + 1).padStart(2, "0")}</span>
-              <span style={{ flex: 1, fontSize: 15 }}>{cat}</span>
-              <button onClick={() => onMoveCategory(i, -1)} disabled={i === 0} aria-label={`${cat} vyššie`} style={arrow(i === 0)}>▲</button>
-              <button onClick={() => onMoveCategory(i, 1)} disabled={i === catOrder.length - 1} aria-label={`${cat} nižšie`} style={arrow(i === catOrder.length - 1)}>▼</button>
+            <div key={cat} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.5rem 0.35rem 0.7rem", borderBottom: i < catOrder.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: CATEGORY_STYLES[cat]?.dot ?? "#94a3b8", flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: "0.8rem", color: "#1e293b" }}>{cat}</span>
+              <button onClick={() => onMoveCategory(i, -1)} disabled={i === 0} title="Vyššie"
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, width: 26, height: 24, cursor: i === 0 ? "not-allowed" : "pointer", opacity: i === 0 ? 0.4 : 1, color: "#475569" }}>▲</button>
+              <button onClick={() => onMoveCategory(i, 1)} disabled={i === catOrder.length - 1} title="Nižšie"
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, width: 26, height: 24, cursor: i === catOrder.length - 1 ? "not-allowed" : "pointer", opacity: i === catOrder.length - 1 ? 0.4 : 1, color: "#475569" }}>▼</button>
             </div>
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ ...pillButton(false), flex: 1, height: 48 }}>Zavrieť</button>
-          <button onClick={() => onSave(proxy.trim(), token.trim())} style={{ ...pillButton(true), flex: 2, height: 48 }}>Uložiť</button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.65rem", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}
+          >
+            Zavrieť
+          </button>
+          <button
+            onClick={() => onSave(proxy.trim(), token.trim())}
+            style={{ flex: 2, background: "#4f46e5", color: "#fff", border: "none", borderRadius: "0.5rem", padding: "0.65rem", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}
+          >
+            Uložiť
+          </button>
         </div>
       </div>
     </div>
@@ -367,6 +386,7 @@ function SettingsModal({ catOrder, onMoveCategory, sortByCategory, onToggleSort,
 }
 
 function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCategory, flash }) {
+  const style = CATEGORY_STYLES[todo.category] ?? CATEGORY_STYLES["Iné"];
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(todo.text);
   const [qty, setQty] = useState(todo.qty ?? "");
@@ -383,79 +403,98 @@ function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCateg
     if (!trimmed) return;
     if (trimmed !== todo.text || qty.trim() !== (todo.qty ?? "")) onEdit(todo.id, trimmed, qty.trim());
   };
-  const onKey = e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); };
-
-  const done = todo.completed;
 
   return (
-    <div style={{ borderRadius: 4, margin: "0 -6px", padding: "0 6px", background: flash ? "#fbeec4" : "transparent", transition: "background 0.3s" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 44 }}>
-        <button onClick={() => onToggle(todo.id)} aria-label={done ? "Vrátiť do zoznamu" : "Označiť ako kúpené"} style={{
-          width: 44, height: 44, margin: "0 -11px", padding: 0, flexShrink: 0, background: "none", border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <span style={{
-            width: 22, height: 22, borderRadius: 4, border: `1.5px solid ${done ? "var(--brick)" : "var(--box)"}`,
-            background: done ? "var(--brick)" : "transparent", color: "var(--paper)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            {done && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>}
+    <div style={{
+      display: "flex", alignItems: "center", gap: "0.625rem",
+      padding: "0.6rem 0.875rem", borderRadius: "0.75rem", border: "1px solid",
+      borderColor: flash ? "#fcd34d" : todo.completed ? "#bbf7d0" : "#f1f5f9",
+      background: flash ? "#fffbeb" : todo.completed ? "rgba(240,253,244,0.7)" : "#fff",
+      boxShadow: todo.completed ? "none" : "0 1px 3px rgba(0,0,0,0.06)",
+      transition: "all 0.15s",
+    }}>
+      <button onClick={() => onToggle(todo.id)} title={todo.completed ? "Vrátiť do zoznamu" : "Mám v košíku"} style={{
+        width: 22, height: 22, borderRadius: "50%", border: "2px solid",
+        borderColor: todo.completed ? "#22c55e" : "#cbd5e1",
+        background: todo.completed ? "#22c55e" : "#fff",
+        color: "#fff", cursor: "pointer", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
+      }}>
+        {todo.completed && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+      </button>
+
+      {editing ? (
+        <>
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+            autoFocus
+            style={{ flex: 1, minWidth: 0, border: "1.5px solid #c7d2fe", borderRadius: 6, padding: "0.25rem 0.4rem", fontSize: "0.75rem", outline: "none", color: "#1e293b" }}
+          />
+          <input
+            value={qty}
+            onChange={e => setQty(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+            placeholder="množstvo"
+            style={{ width: 70, flexShrink: 0, border: "1.5px solid #c7d2fe", borderRadius: 6, padding: "0.25rem 0.4rem", fontSize: "0.7rem", outline: "none", color: "#1e293b" }}
+          />
+          <button onClick={commit} title="Uložiť" style={{ background: "#4f46e5", color: "#fff", border: "none", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>OK</button>
+        </>
+      ) : (
+        <>
+          <span
+            onClick={startEdit}
+            title="Klikni pre úpravu"
+            style={{
+              flex: 1, fontSize: "0.75rem", lineHeight: 1.4, cursor: "text", minWidth: 0,
+              color: todo.completed ? "#94a3b8" : "#1e293b",
+              textDecoration: todo.completed ? "line-through" : "none",
+            }}
+          >
+            {todo.qty ? (
+              <span style={{
+                display: "inline-block", marginRight: 6, padding: "1px 5px", borderRadius: 4,
+                background: todo.completed ? "#f1f5f9" : "#eef2ff", color: todo.completed ? "#94a3b8" : "#4338ca",
+                fontSize: "0.65rem", fontWeight: 700,
+              }}>{todo.qty}</span>
+            ) : null}
+            {todo.text}
           </span>
-        </button>
 
-        <button onClick={startEdit} aria-label={`Upraviť ${todo.text}`} style={{
-          flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 12, padding: "10px 0",
-          background: "none", border: "none", cursor: "text", textAlign: "left", color: "inherit",
-        }}>
-          <span style={{
-            fontSize: 16, lineHeight: 1.35, overflowWrap: "anywhere",
-            color: done ? "var(--done)" : "var(--ink)", textDecoration: done ? "line-through" : "none",
-            textDecorationColor: "var(--brick)", textDecorationThickness: 2,
-          }}>{todo.text}</span>
-          {todo.qty ? (
-            <>
-              <span style={{ flex: 1, minWidth: 12, height: 1, borderBottom: "2px dotted var(--rule)" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 14, whiteSpace: "nowrap", flexShrink: 0, color: done ? "var(--done-qty)" : "var(--ink-2)" }}>{todo.qty}</span>
-            </>
-          ) : null}
-        </button>
-      </div>
-
-      {/* Úprava sa rozbalí pod riadkom — tu sa dá aj zmeniť ulička a položka zmazať */}
-      {editing && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "2px 0 14px 34px" }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <input value={text} onChange={e => setText(e.target.value)} onKeyDown={onKey} autoFocus aria-label="Názov položky" style={{ ...lineInput, flex: 1 }} />
-            <input value={qty} onChange={e => setQty(e.target.value)} onKeyDown={onKey} placeholder="množstvo" aria-label="Množstvo"
-              className="input-line" style={{ ...lineInput, width: 88, fontFamily: "var(--mono)", fontSize: 16, textAlign: "right" }} />
-          </div>
           {showCategory && (
-            <select value={todo.category} onChange={e => onChangeCategory(todo.id, e.target.value)} aria-label="Ulička"
-              style={{ ...lineInput, width: "100%", borderBottom: "1.5px solid var(--line)", fontSize: 15, cursor: "pointer" }}>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <label style={{
+              position: "relative", display: "inline-flex", alignItems: "center", gap: 3,
+              fontSize: "0.6rem", fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+              border: "1px solid", borderColor: style.chip.border,
+              background: style.chip.bg, color: style.chip.color,
+              cursor: "pointer", flexShrink: 0, opacity: todo.completed ? 0.6 : 1,
+              whiteSpace: "nowrap",
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: style.dot, flexShrink: 0 }} />
+              <span>{todo.category}</span>
+              <select
+                value={todo.category}
+                onChange={e => onChangeCategory(todo.id, e.target.value)}
+                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
+              >
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => { setEditing(false); onDelete(todo.id); }}
-              style={{ height: 40, padding: "0 4px", background: "none", border: "none", color: "var(--brick)", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
-              Vymazať
-            </button>
-            <span style={{ flex: 1 }} />
-            <button onClick={() => setEditing(false)} style={{ ...pillButton(false), border: "none" }}>Zrušiť</button>
-            <button onClick={commit} style={pillButton(true)}>Uložiť</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
-function AisleHeading({ no, name, extra }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, paddingBottom: 4 }}>
-      <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 500, color: "var(--brick)" }}>{no}</span>
-      <span style={{ fontFamily: "var(--serif)", fontSize: 19, fontWeight: 700, letterSpacing: "-0.01em" }}>{name}</span>
-      {extra}
+          <button onClick={() => onDelete(todo.id)} title="Odstrániť" style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "#cbd5e1", padding: "2px", borderRadius: 4, flexShrink: 0,
+            display: "flex", alignItems: "center",
+          }}
+            onMouseEnter={e => e.currentTarget.style.color = "#f43f5e"}
+            onMouseLeave={e => e.currentTarget.style.color = "#cbd5e1"}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -737,8 +776,7 @@ export default function App() {
 
   const grouped = useMemo(() => {
     const active = visible.filter(t => !t.completed);
-    const done = visible.filter(t => t.completed)
-      .sort((a, b) => (a.updatedAt - b.updatedAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const done = visible.filter(t => t.completed);
     if (!sortByCategory) {
       return { groups: active.length ? [{ category: null, items: active }] : [], done };
     }
@@ -753,157 +791,220 @@ export default function App() {
   const remaining = visible.filter(t => !t.completed).length;
   const inCart = visible.length - remaining;
 
-  const syncLabel = { off: "", syncing: "ukladám…", ok: "synchr. ✓", error: "offline" }[syncState];
-  const today = new Date().toLocaleDateString("sk-SK", { weekday: "short", day: "numeric", month: "numeric" });
-  const hasText = !!input.trim();
-  const noteStyle = (color) => ({
-    margin: "14px 14px 0", padding: "10px 14px", borderRadius: 6, border: `1.5px dashed ${color}`,
-    color, fontSize: 14, lineHeight: 1.5,
-  });
-  const circle = (size) => ({
-    width: size, height: size, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
-    display: "flex", alignItems: "center", justifyContent: "center",
-  });
-  const rowProps = todo => ({
-    todo, onToggle: toggleTodo, onDelete: deleteTodo, onChangeCategory: setCategory, onEdit: editTodo,
-    showCategory: sortByCategory, flash: flashId === todo.id,
-  });
+  const btnStyle = {
+    background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b",
+    width: 36, height: 36, borderRadius: "0.5rem", cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+    transition: "background 0.1s",
+  };
+
+  const syncLabel = { off: "", syncing: "Ukladám…", ok: "Synchronizované", error: "Offline" }[syncState];
+  const syncColor = { off: "#cbd5e1", syncing: "#f59e0b", ok: "#22c55e", error: "#f43f5e" }[syncState];
 
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: "calc(130px + env(safe-area-inset-bottom))" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(to bottom, #f8fafc, #f1f5f9)" }}>
       {showSettings && (
         <SettingsModal
           catOrder={catOrder}
           onMoveCategory={moveCategory}
-          sortByCategory={sortByCategory}
-          onToggleSort={toggleSortByCategory}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
         />
       )}
 
-      <div style={{ maxWidth: 448, margin: "0 auto" }}>
+      <div style={{ maxWidth: 448, margin: "0 auto", padding: "1rem 1rem 6rem" }}>
 
-        {/* Hlavička */}
-        <header style={{ padding: "26px 24px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={monoMeta}>{today}{syncLabel ? ` · ${syncLabel}` : ""}</div>
-            <h1 style={{ fontFamily: "var(--serif)", fontSize: 38, fontWeight: 500, fontStyle: "italic", letterSpacing: "-0.02em", lineHeight: 1.05 }}>Nákupný lístok</h1>
+        {/* Header */}
+        <header style={{ marginBottom: "1.25rem", paddingTop: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+                <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", letterSpacing: "-0.03em" }}>Nákupný zoznam</h1>
+                <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#cbd5e1" }}>v{APP_VERSION}</span>
+              </div>
+              <p style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "0.15rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span>zostáva {remaining} · v košíku {inCart}</span>
+                {syncLabel && (
+                  <span title={syncLabel} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: syncColor, display: "inline-block" }} />
+                    {syncLabel}
+                  </span>
+                )}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {inCart > 0 && (
+                <button onClick={clearCompleted} style={{ fontSize: "0.7rem", color: "#94a3b8", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                  Vymazať kúpené
+                </button>
+              )}
+              <button onClick={() => setShowSettings(true)} title="Nastavenia" style={{ ...btnStyle, width: 30, height: 30 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+            </div>
           </div>
-          <button onClick={() => setShowSettings(true)} aria-label="Nastavenia" style={{ ...circle(44), border: "1.5px solid var(--line)", background: "transparent", color: "var(--ink-2)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><line x1="5" y1="8" x2="19" y2="8"/><line x1="5" y1="16" x2="19" y2="16"/><circle cx="10" cy="8" r="2.2" fill="var(--desk)"/><circle cx="14" cy="16" r="2.2" fill="var(--desk)"/></svg>
-          </button>
-        </header>
 
-        {notice && <div style={noteStyle("var(--ink-2)")}>{notice}</div>}
-        {errorMsg && <div style={noteStyle("var(--brick)")}>{errorMsg}</div>}
-        {!configured && !showSettings && (
-          <div style={noteStyle("var(--muted)")}>
-            Bez nastaveného Workera funguje ručné pridávanie, ale nie skenovanie fotiek ani synchronizácia medzi zariadeniami.{" "}
-            <button onClick={() => setShowSettings(true)} style={{ color: "var(--ink)", fontWeight: 600, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontSize: "inherit" }}>
-              Nastaviť
+          <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={toggleSortByCategory}
+              title="Triedenie do kategórií"
+              style={{
+                display: "flex", alignItems: "center", gap: "0.4rem",
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999,
+                padding: "0.3rem 0.6rem 0.3rem 0.7rem", cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b" }}>Triedenie do kategórií</span>
+              <span style={{
+                width: 30, height: 17, borderRadius: 999, position: "relative", flexShrink: 0,
+                background: sortByCategory ? "#4f46e5" : "#cbd5e1", transition: "background 0.15s",
+              }}>
+                <span style={{
+                  position: "absolute", top: 2, left: sortByCategory ? 15 : 2,
+                  width: 13, height: 13, borderRadius: "50%", background: "#fff",
+                  transition: "left 0.15s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                }} />
+              </span>
             </button>
           </div>
-        )}
+        </header>
 
-        {/* Lístok */}
-        <div className="receipt" style={{
-          margin: "18px 14px 0", background: "var(--paper)", borderRadius: "6px 6px 0 0", padding: "18px 18px 22px",
-          boxShadow: "0 1px 0 var(--rule), 0 16px 30px -18px rgba(60,45,30,0.35)",
-          display: "flex", flexDirection: "column", gap: 18,
+        {/* Input bar */}
+        <div style={{
+          position: "sticky", top: 12, zIndex: 20,
+          background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
+          borderRadius: "0.875rem", boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
+          border: "1px solid #e2e8f0", padding: "0.375rem", marginBottom: "1.25rem",
+          display: "flex", gap: "0.375rem", alignItems: "center",
         }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", paddingBottom: 12, borderBottom: "1.5px dashed var(--rule)" }}>
-            <span>POLOŽIEK {visible.length}</span>
-            <span>V KOŠÍKU {inCart}</span>
-            <span style={{ color: "var(--brick)", fontWeight: 500 }}>ZOSTÁVA {remaining}</span>
-          </div>
-
-          {isScanning && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, ...monoMeta, color: "var(--brick)" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 1s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              Čítam lístok…
-            </div>
-          )}
-
-          {visible.length === 0 && !isScanning && (
-            <div style={{ textAlign: "center", padding: "28px 0 20px" }}>
-              <p style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 22 }}>Lístok je prázdny</p>
-              <p style={{ fontSize: 14, color: "var(--muted)", marginTop: 6 }}>Dopíš položku alebo odfoť papierový lístok.</p>
-            </div>
-          )}
-
-          {grouped.groups.map(({ category, items }) => (
-            <section key={category ?? "all"} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {category && <AisleHeading no={aisleNumber(catOrder, category)} name={category} />}
-              {items.map(todo => <TodoRow key={todo.id} {...rowProps(todo)} />)}
-            </section>
-          ))}
-
-          {/* Kúpené idú na koniec lístka, naposledy kúpené úplne dole */}
-          {grouped.done.length > 0 && (
-            <section style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: grouped.groups.length ? 14 : 0, borderTop: grouped.groups.length ? "1.5px dashed var(--rule)" : "none" }}>
-              <AisleHeading no="✓" name="V košíku" extra={
-                <>
-                  <span style={{ flex: 1 }} />
-                  <button onClick={clearCompleted} style={{ fontFamily: "var(--mono)", fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--brick)", background: "none", border: "none", cursor: "pointer", padding: "12px 0", margin: "-12px 0" }}>
-                    Vymazať kúpené
-                  </button>
-                </>
-              } />
-              {grouped.done.map(todo => <TodoRow key={todo.id} {...rowProps(todo)} />)}
-            </section>
-          )}
-        </div>
-      </div>
-
-      {/* Spodná lišta: dopísanie, galéria a fotka lístka */}
-      <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 20, background: "var(--desk)", borderTop: "1px solid var(--rule)" }}>
-        <div style={{ maxWidth: 448, margin: "0 auto", padding: "14px 20px calc(30px + env(safe-area-inset-bottom))", display: "flex", gap: 12, alignItems: "center" }}>
           <input
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOne(); } }}
-            placeholder={isScanning ? "Čítam lístok…" : "Dopíš na lístok…"}
+            placeholder={isScanning ? "Spracovávam…" : "Pridať položku…"}
             disabled={isScanning}
-            aria-label="Nová položka"
-            enterKeyHint="done"
-            className="input-line"
-            style={{ ...lineInput, flex: 1, height: 52, padding: "0 4px", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 19 }}
+            style={{
+              flex: 1, background: "transparent", border: "none", outline: "none",
+              padding: "0.4rem 0.5rem", fontSize: "0.875rem", color: "#1e293b",
+              minWidth: 0,
+            }}
           />
           <input type="file" accept="image/*" capture="environment" ref={cameraRef} onChange={handleImage} style={{ display: "none" }} />
           <input type="file" accept="image/*" ref={galleryRef} onChange={handleImage} style={{ display: "none" }} />
 
-          <button onClick={() => galleryRef.current?.click()} disabled={isScanning} aria-label="Z galérie"
-            style={{ ...circle(52), border: "1.5px solid var(--ink)", background: "transparent", color: "var(--ink)", opacity: isScanning ? 0.4 : 1 }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+          <button onClick={() => cameraRef.current?.click()} disabled={isScanning} title="Odfotiť" style={btnStyle}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           </button>
-          {/* Keď je niečo napísané, veľké tlačidlo pridáva; inak fotí lístok */}
-          <button onClick={hasText ? addOne : () => cameraRef.current?.click()} disabled={isScanning} aria-label={hasText ? "Pridať na lístok" : "Odfotiť lístok"}
-            style={{ ...circle(60), border: "none", background: "var(--brick)", color: "var(--paper)", boxShadow: "0 8px 18px -8px rgba(181,72,42,0.7)", opacity: isScanning ? 0.6 : 1 }}>
-            {isScanning ? (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 1s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            ) : hasText ? (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            ) : (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.5-2h4.4l1.5 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
-            )}
+          <button onClick={() => galleryRef.current?.click()} disabled={isScanning} title="Z galérie" style={btnStyle}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           </button>
+          <button onClick={addOne} disabled={isScanning || !input.trim()} title="Pridať" style={{
+            background: "#4f46e5", color: "#fff", border: "none",
+            width: 36, height: 36, borderRadius: "0.5rem", cursor: input.trim() && !isScanning ? "pointer" : "not-allowed",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            opacity: input.trim() && !isScanning ? 1 : 0.5, transition: "opacity 0.15s",
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+
+        {/* Scanning indicator */}
+        {isScanning && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", color: "#4f46e5", fontSize: "0.8rem", fontWeight: 600, marginBottom: "1rem" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 1s linear infinite" }}>
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+            </svg>
+            Spracovávam zoznam…
+          </div>
+        )}
+
+        {/* Notice */}
+        {notice && (
+          <div style={{ marginBottom: "1rem", padding: "0.6rem 0.875rem", borderRadius: "0.75rem", background: "#eef2ff", border: "1px solid #c7d2fe", color: "#4338ca", fontSize: "0.78rem" }}>
+            {notice}
+          </div>
+        )}
+
+        {/* Error */}
+        {errorMsg && (
+          <div style={{ marginBottom: "1rem", padding: "0.6rem 0.875rem", borderRadius: "0.75rem", background: "#fff1f2", border: "1px solid #fecdd3", color: "#be123c", fontSize: "0.78rem" }}>
+            {errorMsg}
+          </div>
+        )}
+
+        {/* Not configured warning */}
+        {!configured && !showSettings && (
+          <div style={{ marginBottom: "1rem", padding: "0.75rem 0.875rem", borderRadius: "0.75rem", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "0.78rem", lineHeight: 1.5 }}>
+            Bez nastaveného Workera funguje ručné pridávanie, ale nie skenovanie fotiek ani synchronizácia medzi zariadeniami.{" "}
+            <button onClick={() => setShowSettings(true)} style={{ color: "#4f46e5", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontSize: "inherit" }}>
+              Nastaviť
+            </button>
+          </div>
+        )}
+
+        {/* List */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          {visible.length === 0 && !isScanning ? (
+            <div style={{ textAlign: "center", paddingTop: "4rem" }}>
+              <p style={{ fontSize: "1rem", color: "#94a3b8" }}>Zoznam je prázdny</p>
+              <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem" }}>
+                Odfoť alebo vlož nákupný lístok
+              </p>
+            </div>
+          ) : (
+            <>
+              {grouped.groups.map(({ category, items }) => (
+                <section key={category ?? "all"}>
+                  {category && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.5rem", paddingLeft: "0.25rem" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: CATEGORY_STYLES[category]?.dot ?? "#94a3b8", flexShrink: 0 }} />
+                      <span style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, color: "#94a3b8" }}>{category}</span>
+                      <span style={{ fontSize: "0.65rem", color: "#cbd5e1" }}>· {items.length}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {items.map(todo => (
+                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo}
+                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {grouped.done.length > 0 && (
+                <section>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.5rem", paddingLeft: "0.25rem" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, color: "#94a3b8" }}>V košíku</span>
+                    <span style={{ fontSize: "0.65rem", color: "#cbd5e1" }}>· {grouped.done.length}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {grouped.done.map(todo => (
+                      <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo}
+                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
         </div>
       </div>
 
       {/* Undo snackbar */}
       {undoState && (
-        <div style={{ position: "fixed", bottom: "calc(116px + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(92vw, 28rem)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--ink)", color: "var(--paper)", padding: "6px 8px 6px 16px", borderRadius: 999, boxShadow: "0 10px 30px -10px rgba(42,37,32,0.6)" }}>
-            <span style={{ flex: 1, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{undoState.message}</span>
-            <button onClick={performUndo} style={{ height: 36, padding: "0 12px", color: "#f2b8a4", background: "none", border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>Vrátiť</button>
-            <button onClick={() => setUndoState(null)} aria-label="Zavrieť" style={{ ...circle(36), color: "var(--done-qty)", background: "none", border: "none" }}>
+        <div style={{ position: "fixed", bottom: "1.25rem", left: "50%", transform: "translateX(-50%)", zIndex: 30, width: "min(92vw, 28rem)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", background: "#0f172a", color: "#fff", padding: "0.75rem 1rem", borderRadius: "0.875rem", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" }}>
+            <span style={{ flex: 1, fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{undoState.message}</span>
+            <button onClick={performUndo} style={{ color: "#a5b4fc", background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.8rem" }}>Vrátiť</button>
+            <button onClick={() => setUndoState(null)} style={{ color: "#64748b", background: "none", border: "none", cursor: "pointer", display: "flex" }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </div>
       )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

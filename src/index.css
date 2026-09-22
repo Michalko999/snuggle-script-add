@@ -1,48 +1,10 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Návrh C · Lístok */
-:root {
-  --desk: #e9e3d6;
-  --paper: #fffdf7;
-  --ink: #2a2520;
-  --ink-2: #4a4239;
-  --muted: #7a6f63;
-  --box: #9c9180;
-  --done: #a39888;
-  --done-qty: #bdb3a3;
-  --rule: #d9d1c1;
-  --line: #cfc6b5;
-  --brick: #b5482a;
-  --serif: "Fraunces", Georgia, serif;
-  --sans: "IBM Plex Sans", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
-}
-
 body {
-  font-family: var(--sans);
-  background: var(--desk);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
   min-height: 100vh;
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
+  color: #1e293b;
 }
-
-button, input, select { font-family: inherit; }
-button { -webkit-tap-highlight-color: transparent; }
 
 #root { min-height: 100vh; }
-
-/* Lístok sa dole končí odtrhnutým zúbkovaným okrajom */
-.receipt { position: relative; }
-.receipt::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -8px;
-  height: 8px;
-  background: conic-gradient(from -45deg at 50% 100%, var(--paper) 90deg, transparent 0) 0 0 / 16px 8px repeat-x;
-}
-
-.input-line::placeholder { color: var(--muted); opacity: 1; }
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

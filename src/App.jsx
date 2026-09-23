@@ -58,7 +58,7 @@ const CATEGORY_STYLES = {
   "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -70,6 +70,11 @@ const LEGACY_APIKEY_KEY = "anthropic-api-key";
 // Zmazané položky sa nechávajú ako náhrobok, aby sa mazanie prenieslo
 // na ostatné zariadenia a položka sa pri synchronizácii nevrátila.
 const TOMBSTONE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Kým je appka otvorená, pýta sa na zmeny z druhého mobilu takto často.
+// Vlastnú zmenu odošle skoro hneď — krátke čakanie len zlúči rýchle ťuknutia.
+const POLL_MS = 4000;
+const PUSH_DELAY_MS = 500;
 
 const SCAN_MODEL = "claude-sonnet-5";
 const CATEGORIZE_MODEL = "claude-haiku-4-5";
@@ -269,16 +274,21 @@ async function fetchList() {
   return res.json();
 }
 
-async function putList(items) {
+// Novší worker vráti už zlúčený zoznam (aj so zmenami z druhého mobilu),
+// starší len { ok: true } — vtedy vráti null.
+async function putList(items, { keepalive = false } = {}) {
   const base = workerBase();
-  if (!base) return;
+  if (!base) return null;
   const res = await fetch(`${base}/list`, {
     method: "PUT",
     headers: { "content-type": "application/json", "x-app-token": appToken() },
     body: JSON.stringify({ items, updatedAt: Date.now() }),
+    keepalive,
   });
-  if (res.status === 501) return;
+  if (res.status === 501) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json().catch(() => null);
+  return Array.isArray(data?.items) ? data.items : null;
 }
 
 function normalizeItem(item) {
@@ -565,58 +575,75 @@ export default function App() {
   }, []);
 
   // ── Synchronizácia ─────────────────────────────────────────────
+  // Zoznam zo servera zlúčime s lokálnym a zapamätáme si, čo server má.
+  const adoptRemote = useCallback((remoteItems) => {
+    const merged = mergeLists(todosRef.current, remoteItems);
+    if (JSON.stringify(merged) !== JSON.stringify(todosRef.current)) setTodos(merged);
+    lastSyncedRef.current = JSON.stringify(sortItems(remoteItems.map(normalizeItem)));
+  }, []);
+
   const pull = useCallback(async () => {
     if (!workerBase()) return;
     try {
       const remote = await fetchList();
       if (!remote) { setSyncState("off"); return; }
-      const remoteItems = Array.isArray(remote.items) ? remote.items : [];
-      const merged = mergeLists(todosRef.current, remoteItems);
-      if (JSON.stringify(merged) !== JSON.stringify(todosRef.current)) setTodos(merged);
-      lastSyncedRef.current = JSON.stringify(remoteItems.map(normalizeItem));
+      adoptRemote(Array.isArray(remote.items) ? remote.items : []);
       setSyncState("ok");
     } catch {
       setSyncState("error");
     }
-  }, []);
+  }, [adoptRemote]);
 
-  const push = useCallback(async () => {
+  const push = useCallback(async (opts) => {
     if (!workerBase()) return;
     const items = todosRef.current;
     const payload = JSON.stringify(items);
     if (payload === lastSyncedRef.current) return;
     setSyncState("syncing");
     try {
-      await putList(items);
-      lastSyncedRef.current = payload;
+      const merged = await putList(items, opts);
+      if (merged) adoptRemote(merged);
+      else lastSyncedRef.current = payload;
       setSyncState("ok");
     } catch {
       setSyncState("error");
     }
-  }, []);
+  }, [adoptRemote]);
 
   // Po stiahnutí skúsime aj odoslať — inak by zmena spravená offline ležala
-  // v mobile dovtedy, kým sa zoznamu znova nedotkneš.
-  const syncNow = useCallback(async () => { await pull(); await push(); }, [pull, push]);
+  // v mobile dovtedy, kým sa zoznamu znova nedotkneš. Pri pomalej sieti
+  // sa dopyty nenavrstvujú: kým jeden beží, ďalší sa preskočí.
+  const syncing = useRef(false);
+  const syncNow = useCallback(async () => {
+    if (syncing.current) return;
+    syncing.current = true;
+    try { await pull(); await push(); } finally { syncing.current = false; }
+  }, [pull, push]);
 
   useEffect(() => {
     if (!hydrated || !configured) return;
     syncNow();
-    const iv = setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, 15000);
-    const onVisible = () => { if (document.visibilityState === "visible") syncNow(); };
-    document.addEventListener("visibilitychange", onVisible);
+    const iv = setInterval(() => { if (document.visibilityState === "visible") syncNow(); }, POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { syncNow(); return; }
+      // Mobil sa zamyká / appka ide do pozadia: neodoslanú zmenu pošli hneď,
+      // keepalive ju dokončí, aj keď prehliadač stránku uspí.
+      clearTimeout(pushTimer.current);
+      push({ keepalive: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", syncNow);
     return () => {
       clearInterval(iv);
-      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", syncNow);
     };
-  }, [hydrated, configured, syncNow]);
+  }, [hydrated, configured, syncNow, push]);
 
   useEffect(() => {
     if (!hydrated || !configured) return;
     clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(push, 1500);
+    pushTimer.current = setTimeout(push, PUSH_DELAY_MS);
     return () => clearTimeout(pushTimer.current);
   }, [todos, hydrated, configured, push]);
 

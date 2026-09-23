@@ -58,7 +58,7 @@ const CATEGORY_STYLES = {
   "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.3";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -66,6 +66,10 @@ const TOKEN_KEY = "app-token-v1";
 const SORT_MODE_KEY = "sort-by-category-v1";
 const CAT_ORDER_KEY = "category-order-v1";
 const LEGACY_APIKEY_KEY = "anthropic-api-key";
+// Nastavenia, ktoré sa synchronizujú medzi mobilmi (pozri mergeSettings)
+const SETTINGS_KEY = "synced-settings-v1";
+const SETTINGS_DIRTY_KEY = "synced-settings-dirty-v1";
+const HISTORY_SEEDED_KEY = "history-seeded-v1";
 
 // Zmazané položky sa nechávajú ako náhrobok, aby sa mazanie prenieslo
 // na ostatné zariadenia a položka sa pri synchronizácii nevrátila.
@@ -133,6 +137,75 @@ function mergeCatOrder(stored) {
     order.splice(at + 1, 0, category);
   });
   return order;
+}
+
+// ── Synchronizované nastavenia ───────────────────────────────────
+// Jeden plochý slovník: „pref:<položka>" = naučená kategória, „hist:<položka>" =
+// história nákupov, „catOrder" = poradie uličiek. Každý záznam nesie čas zmeny
+// a pri zlúčení s druhým mobilom vyhrá novší — rovnako ako pri položkách.
+
+function mergeSettings(local, incoming) {
+  let merged = local;
+  Object.entries(incoming ?? {}).forEach(([key, entry]) => {
+    if (!entry || typeof entry !== "object") return;
+    const mine = merged[key];
+    if (!mine || (entry.updatedAt ?? 0) > (mine.updatedAt ?? 0)) {
+      if (merged === local) merged = { ...local };
+      merged[key] = { value: entry.value, updatedAt: entry.updatedAt ?? 0 };
+    }
+  });
+  return merged; // ten istý objekt, ak sa nič nezmenilo
+}
+
+function pickSettings(settings, prefix) {
+  const out = {};
+  Object.entries(settings).forEach(([key, entry]) => {
+    if (key.startsWith(prefix) && entry.value != null) out[key.slice(prefix.length)] = entry.value;
+  });
+  return out;
+}
+
+// ── Rozbor napísaného textu ──────────────────────────────────────
+// „mlieko 2 l, 6 vajec; chlieb" → tri položky s množstvom. AI potom ešte opraví
+// tvar slov („vajec" → „Vajcia"), ale zoznam sa ukáže hneď aj bez nej.
+
+const QTY_UNITS = "kusov|kusy|kus|ks|x|×|litre|litrov|litra|liter|ml|dl|cl|l|dkg|dag|kg|g|balenia|balenie|bal|fľaše|fľaša|fl|plechovky|plechovka|krabice|krabica";
+const QTY_NUM = "\\d+(?:[.,]\\d+)?";
+const QTY_LEAD = new RegExp(`^(${QTY_NUM})\\s*(${QTY_UNITS})?\\.?\\s+(.+)$`, "i");
+const QTY_TRAIL = new RegExp(`^(.+?)\\s+(${QTY_NUM})\\s*(${QTY_UNITS})?\\.?$`, "i");
+const QTY_TRAIL_X = /^(.+?)\s+[x×]\s*(\d+)$/i;
+const UNIT_ALIASES = {
+  kus: "ks", kusy: "ks", kusov: "ks", l: "L", liter: "L", litre: "L", litrov: "L", litra: "L",
+  dag: "dkg", balenie: "bal", balenia: "bal", "fľaša": "fl", "fľaše": "fl",
+  plechovka: "plech", plechovky: "plech", krabica: "krab", krabice: "krab",
+};
+
+function formatQty(num, unit) {
+  const u = (unit ?? "").toLowerCase();
+  if (!u || u === "x" || u === "×") return `${num}x`;
+  return `${num} ${UNIT_ALIASES[u] ?? u}`;
+}
+
+// Samotné číslo bez jednotky berieme ako počet kusov len vtedy, keď je malé
+// a celé — „Coca-Cola 1,5" alebo „Rama 500" nechá tak, ako sú napísané.
+const plainCount = num => /^\d+$/.test(num) && Number(num) >= 1 && Number(num) <= 99;
+
+function parseEntry(raw) {
+  const s = raw.replace(/\s+/g, " ").trim();
+  let m = s.match(QTY_LEAD);
+  if (m && (m[2] || plainCount(m[1]))) return { raw: s, text: m[3].trim(), qty: formatQty(m[1], m[2]) };
+  m = s.match(QTY_TRAIL_X);
+  if (m) return { raw: s, text: m[1].trim(), qty: formatQty(m[2], "x") };
+  m = s.match(QTY_TRAIL);
+  if (m && (m[3] || plainCount(m[2]))) return { raw: s, text: m[1].trim(), qty: formatQty(m[2], m[3]) };
+  return { raw: s, text: s, qty: "" };
+}
+
+// Čiarka medzi číslicami („1,5 kg") nie je oddeľovač. Nadiktovaný text nemá
+// čiarky, tak tam delíme aj na „a" / „aj"; zvyšok rozdelí AI.
+function splitInput(raw, { voice = false } = {}) {
+  const sep = voice ? /;|\n|(?<!\d),|,(?!\d)|\s+(?:a|aj|potom)\s+/i : /;|\n|(?<!\d),|,(?!\d)/;
+  return raw.split(sep).map(part => part.trim()).filter(Boolean).map(parseEntry).filter(e => e.text);
 }
 
 // ── Anthropic cez vlastný Cloudflare Worker ──────────────────────
@@ -240,55 +313,90 @@ PRAVIDLÁ:
   return (parsed.items ?? []).filter(i => i.text && CATEGORIES.includes(i.category));
 }
 
-const CATEGORY_SCHEMA = {
+const PARSE_SCHEMA = {
   type: "object",
-  properties: { category: { type: "string", enum: CATEGORIES } },
-  required: ["category"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          source: { type: "integer" },
+          text: { type: "string" },
+          qty: { type: "string" },
+          category: { type: "string", enum: CATEGORIES },
+        },
+        required: ["source", "text", "qty", "category"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
   additionalProperties: false,
 };
 
-async function categorizeItem(text) {
+// Dostane očíslované riadky tak, ako ich človek napísal alebo nadiktoval,
+// a vráti položky v základnom tvare s množstvom a kategóriou. Jeden riadok
+// sa môže rozpadnúť na viac položiek (nadiktované „rožky maslo a dve mlieka").
+async function parseItems(lines) {
   const data = await callAnthropic({
     model: CATEGORIZE_MODEL,
-    max_tokens: 256,
-    system: `Zaraď položku nákupného zoznamu do najpresnejšej z povolených kategórií.
-Rozhoduje oddelenie v obchode, nie surovina: mrazená zelenina patrí do „Mrazené",
+    max_tokens: 2048,
+    system: `Dostaneš očíslované riadky, ktoré človek napísal alebo nadiktoval do nákupného zoznamu.
+Pre každú položku vráť:
+- source: číslo riadku, z ktorého pochádza
+- text: názov v základnom tvare (1. pád), s veľkým začiatočným písmenom, bez množstva — „6 vajec" → „Vajcia", „dve mlieka" → „Mlieko", „kúp chlieb" → „Chlieb"
+- qty: množstvo číslicami s jednotkou („2x", „1 L", „500 g", „20 dkg"); počet kusov ako „6x"; ak množstvo nie je uvedené, nechaj prázdne
+- category: najpresnejšia kategória zo zoznamu povolených hodnôt
+
+Ak riadok obsahuje viac vecí (napr. „rožky maslo a dve mlieka"), rozdeľ ho na samostatné položky s rovnakým source. Viacslovný názov jednej veci nedeľ („kuracie prsia", „mrazený hrášok"). Nič nepridávaj ani nevymýšľaj a nemeň položku na inú vec.
+
+Pri kategórii rozhoduje oddelenie v obchode, nie surovina: mrazená zelenina patrí do „Mrazené",
 saláma a šunka do „Údeniny a šunka", čokoláda do „Sladkosti", chipsy do „Slané snacky",
 pivo a víno do „Alkohol", mlieko a syry do „Mlieko, syry, maslo", jogurt do „Jogurty a dezerty".
 „Iné" použi len vtedy, keď sa položka naozaj nikam nehodí.`,
-    output_config: { format: { type: "json_schema", schema: CATEGORY_SCHEMA } },
-    messages: [{ role: "user", content: text }],
+    output_config: { format: { type: "json_schema", schema: PARSE_SCHEMA } },
+    messages: [{ role: "user", content: lines.map((line, i) => `${i}: ${line}`).join("\n") }],
   });
-  const category = firstJSON(data).category;
-  return CATEGORIES.includes(category) ? category : "Iné";
+  if (data.stop_reason === "max_tokens") throw new Error("Zadanie je príliš dlhé — skús ho rozdeliť.");
+  return (firstJSON(data).items ?? [])
+    .filter(it => Number.isInteger(it.source) && it.source >= 0 && it.source < lines.length && it.text?.trim())
+    .map(it => ({
+      source: it.source,
+      text: it.text.trim(),
+      qty: (it.qty ?? "").trim(),
+      category: CATEGORIES.includes(it.category) ? it.category : "Iné",
+    }));
 }
 
-// ── Synchronizácia zoznamu cez Worker (KV) ───────────────────────
+// ── Synchronizácia zoznamu a nastavení cez Worker ────────────────
+// settingsSince: najnovšia verzia nastavení, ktorú už mobil má — server
+// pošle len tie, čo sa odvtedy zmenili.
 
-async function fetchList() {
+async function fetchList(settingsSince = 0) {
   const base = workerBase();
   if (!base) return null;
-  const res = await fetch(`${base}/list`, { headers: { "x-app-token": appToken() } });
+  const res = await fetch(`${base}/list?settingsSince=${settingsSince}`, { headers: { "x-app-token": appToken() } });
   if (res.status === 501) return null; // worker nemá nabindované KV
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-// Novší worker vráti už zlúčený zoznam (aj so zmenami z druhého mobilu),
-// starší len { ok: true } — vtedy vráti null.
-async function putList(items, { keepalive = false } = {}) {
+// Novší worker vráti už zlúčený zoznam aj nastavenia (so zmenami z druhého
+// mobilu), starší len { ok: true } — vtedy vráti null.
+async function putList(items, settings, settingsSince, { keepalive = false } = {}) {
   const base = workerBase();
   if (!base) return null;
-  const res = await fetch(`${base}/list`, {
+  const res = await fetch(`${base}/list?settingsSince=${settingsSince}`, {
     method: "PUT",
     headers: { "content-type": "application/json", "x-app-token": appToken() },
-    body: JSON.stringify({ items, updatedAt: Date.now() }),
+    body: JSON.stringify({ items, settings, updatedAt: Date.now() }),
     keepalive,
   });
   if (res.status === 501) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json().catch(() => null);
-  return Array.isArray(data?.items) ? data.items : null;
+  return Array.isArray(data?.items) ? data : null;
 }
 
 function normalizeItem(item) {
@@ -513,7 +621,7 @@ function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCateg
 
 export default function App() {
   const [todos, setTodos] = useState([]);
-  const [prefs, setPrefs] = useState({});
+  const [settings, setSettings] = useState({});
   const [hydrated, setHydrated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [configured, setConfigured] = useState(false);
@@ -524,8 +632,8 @@ export default function App() {
   const [flashId, setFlashId] = useState(null);
   const [undoState, setUndoState] = useState(null);
   const [sortByCategory, setSortByCategory] = useState(true);
-  const [catOrder, setCatOrder] = useState(CATEGORIES);
   const [syncState, setSyncState] = useState("off"); // off | syncing | ok | error
+  const [listening, setListening] = useState(false);
 
   const undoTimer = useRef(null);
   const noticeTimer = useRef(null);
@@ -535,24 +643,108 @@ export default function App() {
   const galleryRef = useRef(null);
   const todosRef = useRef([]);
   const lastSyncedRef = useRef("");
+  const settingsRef = useRef({});
+  const dirtySettingsRef = useRef(new Set()); // kľúče, ktoré ešte neodišli na server
+  const settingsVersionRef = useRef(0);
+  // Starší worker nastavenia nepozná; kým to nevieme, skúšame ich posielať.
+  const serverKeepsSettingsRef = useRef(true);
+  const recognitionRef = useRef(null);
 
   useEffect(() => { todosRef.current = todos; }, [todos]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  // Odvodené z nastavení: naučené kategórie, história nákupov, poradie uličiek
+  const prefs = useMemo(() => {
+    const out = {};
+    Object.entries(pickSettings(settings, "pref:")).forEach(([key, value]) => {
+      const category = migrateCategory(value);
+      if (CATEGORIES.includes(category)) out[key] = category;
+    });
+    return out;
+  }, [settings]);
+  const history = useMemo(() => pickSettings(settings, "hist:"), [settings]);
+  const catOrderSetting = settings.catOrder?.value;
+  const catOrder = useMemo(
+    () => mergeCatOrder(Array.isArray(catOrderSetting) ? catOrderSetting : CATEGORIES),
+    [catOrderSetting]);
+
+  const persistSettings = (next) => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* plné úložisko */ }
+  };
+  const persistDirty = () => {
+    localStorage.setItem(SETTINGS_DIRTY_KEY, JSON.stringify([...dirtySettingsRef.current]));
+  };
+
+  // Zapíše zmenené nastavenia a označí ich na odoslanie druhému mobilu.
+  const writeSettings = useCallback((changes) => {
+    const now = Date.now();
+    const next = { ...settingsRef.current };
+    Object.entries(changes).forEach(([key, value]) => {
+      next[key] = { value, updatedAt: now };
+      dirtySettingsRef.current.add(key);
+    });
+    settingsRef.current = next;
+    setSettings(next);
+    persistSettings(next);
+    persistDirty();
+  }, []);
+
+  // Každé pridanie položky sa zapíše do histórie — z nej sú ponuky „Často kupuješ".
+  const recordHistory = useCallback((items) => {
+    const changes = {};
+    items.forEach(item => {
+      const key = normalize(item.text);
+      if (!key) return;
+      const prev = changes[`hist:${key}`] ?? settingsRef.current[`hist:${key}`]?.value;
+      changes[`hist:${key}`] = {
+        text: item.text, category: item.category,
+        count: (prev?.count ?? 0) + 1, lastAt: Date.now(),
+      };
+    });
+    if (Object.keys(changes).length) writeSettings(changes);
+  }, [writeSettings]);
 
   useEffect(() => {
     // Kľúč sa kedysi držal v prehliadači; teraz žije vo Workeri, tak ho odtiaľto zmažeme.
     localStorage.removeItem(LEGACY_APIKEY_KEY);
 
-    setTodos(sortItems(loadJSON(STORAGE_KEY, []).map(normalizeItem)));
-    setPrefs(migratePrefs(loadJSON(PREFS_KEY, {})));
+    const storedTodos = sortItems(loadJSON(STORAGE_KEY, []).map(normalizeItem));
+    setTodos(storedTodos);
     const storedSortMode = localStorage.getItem(SORT_MODE_KEY);
     if (storedSortMode !== null) setSortByCategory(storedSortMode === "true");
 
-    const storedOrder = loadJSON(CAT_ORDER_KEY, null);
-    if (Array.isArray(storedOrder)) {
-      const order = mergeCatOrder(storedOrder);
-      setCatOrder(order);
-      localStorage.setItem(CAT_ORDER_KEY, JSON.stringify(order));
+    let stored = loadJSON(SETTINGS_KEY, null);
+    const dirty = new Set(loadJSON(SETTINGS_DIRTY_KEY, []));
+    if (!stored || typeof stored !== "object") {
+      // Prvé spustenie tejto verzie: naučené kategórie a poradie uličiek boli
+      // len v tomto mobile. Čas 1 = pošli ich na server, ale novšie tam vyhrá.
+      stored = {};
+      Object.entries(migratePrefs(loadJSON(PREFS_KEY, {}))).forEach(([key, category]) => {
+        stored[`pref:${key}`] = { value: category, updatedAt: 1 };
+      });
+      const oldOrder = loadJSON(CAT_ORDER_KEY, null);
+      if (Array.isArray(oldOrder)) stored.catOrder = { value: mergeCatOrder(oldOrder), updatedAt: 1 };
+      Object.keys(stored).forEach(key => dirty.add(key));
     }
+    if (!localStorage.getItem(HISTORY_SEEDED_KEY)) {
+      // Históriu naplníme z toho, čo už v zozname je alebo bolo za posledný týždeň.
+      storedTodos.forEach(item => {
+        const key = normalize(item.text);
+        if (!key) return;
+        const prev = stored[`hist:${key}`]?.value;
+        stored[`hist:${key}`] = {
+          value: { text: item.text, category: item.category, count: (prev?.count ?? 0) + 1, lastAt: Math.max(prev?.lastAt ?? 0, item.createdAt) },
+          updatedAt: 1,
+        };
+        dirty.add(`hist:${key}`);
+      });
+      localStorage.setItem(HISTORY_SEEDED_KEY, "1");
+    }
+    dirtySettingsRef.current = dirty;
+    settingsRef.current = stored;
+    setSettings(stored);
+    persistSettings(stored);
+    persistDirty();
 
     setConfigured(!!workerBase());
     setHydrated(true);
@@ -575,19 +767,32 @@ export default function App() {
   }, []);
 
   // ── Synchronizácia ─────────────────────────────────────────────
-  // Zoznam zo servera zlúčime s lokálnym a zapamätáme si, čo server má.
-  const adoptRemote = useCallback((remoteItems) => {
+  // Zoznam a nastavenia zo servera zlúčime s lokálnymi a zapamätáme si, čo server má.
+  const adoptRemote = useCallback((remote) => {
+    const remoteItems = Array.isArray(remote.items) ? remote.items : [];
     const merged = mergeLists(todosRef.current, remoteItems);
     if (JSON.stringify(merged) !== JSON.stringify(todosRef.current)) setTodos(merged);
     lastSyncedRef.current = JSON.stringify(sortItems(remoteItems.map(normalizeItem)));
+
+    if (remote.settings && typeof remote.settings === "object") {
+      const next = mergeSettings(settingsRef.current, remote.settings);
+      if (next !== settingsRef.current) {
+        settingsRef.current = next;
+        setSettings(next);
+        persistSettings(next);
+      }
+    }
+    if (Number.isFinite(remote.settingsVersion)) {
+      settingsVersionRef.current = Math.max(settingsVersionRef.current, remote.settingsVersion);
+    }
   }, []);
 
   const pull = useCallback(async () => {
     if (!workerBase()) return;
     try {
-      const remote = await fetchList();
+      const remote = await fetchList(settingsVersionRef.current);
       if (!remote) { setSyncState("off"); return; }
-      adoptRemote(Array.isArray(remote.items) ? remote.items : []);
+      adoptRemote(remote);
       setSyncState("ok");
     } catch {
       setSyncState("error");
@@ -598,11 +803,25 @@ export default function App() {
     if (!workerBase()) return;
     const items = todosRef.current;
     const payload = JSON.stringify(items);
-    if (payload === lastSyncedRef.current) return;
+    const sent = {};
+    dirtySettingsRef.current.forEach(key => {
+      if (settingsRef.current[key]) sent[key] = settingsRef.current[key];
+    });
+    const hasSettings = Object.keys(sent).length > 0;
+    if (payload === lastSyncedRef.current && !(hasSettings && serverKeepsSettingsRef.current)) return;
     setSyncState("syncing");
     try {
-      const merged = await putList(items, opts);
-      if (merged) adoptRemote(merged);
+      const remote = await putList(items, hasSettings ? sent : undefined, settingsVersionRef.current, opts);
+      // Odoslané nastavenia už nie sú „na odoslanie" — ale len keď ich server naozaj
+      // uložil (starší worker ich zahodí) a medzitým sa znova nezmenili.
+      serverKeepsSettingsRef.current = Number.isFinite(remote?.settingsVersion);
+      if (serverKeepsSettingsRef.current) {
+        Object.entries(sent).forEach(([key, entry]) => {
+          if (settingsRef.current[key]?.updatedAt === entry.updatedAt) dirtySettingsRef.current.delete(key);
+        });
+        persistDirty();
+      }
+      if (remote) adoptRemote(remote);
       else lastSyncedRef.current = payload;
       setSyncState("ok");
     } catch {
@@ -645,7 +864,7 @@ export default function App() {
     clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(push, PUSH_DELAY_MS);
     return () => clearTimeout(pushTimer.current);
-  }, [todos, hydrated, configured, push]);
+  }, [todos, settings, hydrated, configured, push]);
 
   // ── Nastavenia ─────────────────────────────────────────────────
   const saveSettings = (proxyUrl, token) => {
@@ -653,21 +872,17 @@ export default function App() {
     else localStorage.removeItem(PROXY_KEY);
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
-    localStorage.setItem(CAT_ORDER_KEY, JSON.stringify(catOrder));
     setConfigured(!!workerBase());
     setShowSettings(false);
     setErrorMsg(null);
   };
 
   const moveCategory = (index, dir) => {
-    setCatOrder(prev => {
-      const next = [...prev];
-      const target = index + dir;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      localStorage.setItem(CAT_ORDER_KEY, JSON.stringify(next));
-      return next;
-    });
+    const target = index + dir;
+    if (target < 0 || target >= catOrder.length) return;
+    const next = [...catOrder];
+    [next[index], next[target]] = [next[target], next[index]];
+    writeSettings({ catOrder: next });
   };
 
   // ── Operácie so zoznamom ───────────────────────────────────────
@@ -691,31 +906,157 @@ export default function App() {
     return todosRef.current.find(t => !t.deleted && normalize(t.text) === key) ?? null;
   };
 
-  const addOne = async () => {
-    const text = input.trim();
-    if (!text) return;
+  // Položka, ktorá už v zozname je: zablikne, a ak bola kúpená, vráti sa späť.
+  const bringBack = (duplicate) => {
+    flashItem(duplicate.id);
+    showNotice(`„${duplicate.text}" už v zozname je.`);
+    if (duplicate.completed) {
+      setTodos(prev => prev.map(t => t.id === duplicate.id ? { ...t, completed: false, updatedAt: Date.now() } : t));
+    }
+  };
 
-    const duplicate = findActiveDuplicate(text);
-    if (duplicate) {
-      setInput("");
-      flashItem(duplicate.id);
-      showNotice(`„${duplicate.text}" už v zozname je.`);
-      if (duplicate.completed) {
-        setTodos(prev => prev.map(t => t.id === duplicate.id ? { ...t, completed: false, updatedAt: Date.now() } : t));
-      }
+  // Pridá napísaný alebo nadiktovaný text: rozdelí ho na položky, vytiahne
+  // množstvá a hneď ich ukáže. Položky, ktoré appka ešte nepozná, potom opraví AI
+  // (základný tvar, množstvo, kategória, rozdelenie nadiktovaného textu).
+  const addText = async (raw, { voice = false } = {}) => {
+    const entries = splitInput(raw, { voice });
+    if (!entries.length) return;
+    setInput("");
+
+    const now = Date.now();
+    const fresh = [];
+    const taken = new Set(todosRef.current.filter(t => !t.deleted).map(t => normalize(t.text)));
+    let duplicate = null;
+    entries.forEach(entry => {
+      const key = normalize(entry.text);
+      if (!key) return;
+      if (taken.has(key)) { duplicate ??= findActiveDuplicate(entry.text); return; }
+      taken.add(key);
+      const known = prefs[key] ?? history[key]?.category;
+      const item = normalizeItem({
+        id: crypto.randomUUID(), text: entry.text, qty: entry.qty,
+        category: known ?? "Iné", createdAt: now, updatedAt: now,
+      });
+      // Známu položku netreba posielať AI — pokiaľ nejde o diktovanie, ktoré treba rozdeliť.
+      fresh.push({ item, raw: entry.raw, known: !!prefs[key] && !voice });
+    });
+    if (duplicate) bringBack(duplicate);
+    if (!fresh.length) return;
+    setTodos(prev => sortItems([...fresh.map(f => f.item), ...prev]));
+
+    const unknown = fresh.filter(f => !f.known);
+    recordHistory(fresh.filter(f => f.known).map(f => f.item));
+    if (!unknown.length) return;
+    if (!configured) { recordHistory(unknown.map(f => f.item)); return; }
+
+    let parsed;
+    try {
+      parsed = await parseItems(unknown.map(f => f.raw));
+    } catch (err) {
+      recordHistory(unknown.map(f => f.item));
+      setErrorMsg(err.message ?? "Kategorizácia zlyhala.");
       return;
     }
 
-    setInput("");
-    const id = crypto.randomUUID();
-    const pref = prefs[normalize(text)];
+    // Náhrady spočítame vopred, aby sme ich poznali aj pre históriu.
+    const snapshot = todosRef.current;
+    const provisional = new Set(unknown.map(f => f.item.id));
+    const takenKeys = new Set(snapshot.filter(t => !t.deleted && !provisional.has(t.id)).map(t => normalize(t.text)));
+    const plans = [];
+    unknown.forEach((f, source) => {
+      const results = parsed.filter(r => r.source === source);
+      if (!results.length) { takenKeys.add(normalize(f.item.text)); return; }
+      const replacement = [];
+      results.forEach(r => {
+        const key = normalize(r.text);
+        if (!key || takenKeys.has(key)) return;
+        takenKeys.add(key);
+        replacement.push(normalizeItem({
+          ...f.item,
+          id: replacement.length ? crypto.randomUUID() : f.item.id,
+          text: r.text,
+          qty: r.qty || (results.length === 1 ? f.item.qty : ""),
+          category: prefs[key] ?? r.category,
+          updatedAt: Date.now(),
+        }));
+      });
+      plans.push({ original: f.item, replacement });
+    });
+
+    setTodos(prev => {
+      let next = prev;
+      plans.forEach(({ original, replacement }) => {
+        const current = next.find(t => t.id === original.id);
+        // Medzitým ju niekto upravil, odškrtol alebo zmazal — nechaj ju tak.
+        if (!current || current.updatedAt !== original.updatedAt || current.deleted || current.completed) return;
+        next = next.filter(t => t.id !== original.id);
+        // Pôvodnú položku zmazať náhrobkom (nie len vyhodiť), aby sa nevrátila zo servera.
+        if (replacement[0]?.id !== original.id) next.push({ ...current, deleted: true, updatedAt: Date.now() });
+        next = [...replacement, ...next];
+      });
+      return next === prev ? prev : sortItems(next);
+    });
+    const unchanged = unknown.filter(f => !plans.some(p => p.original.id === f.item.id)).map(f => f.item);
+    recordHistory([...plans.flatMap(p => p.replacement), ...unchanged]);
+  };
+
+  const addOne = () => addText(input);
+
+  // Ťuk na ponuku: položka s kategóriou, ktorú appka už pozná — bez volania AI.
+  const addSuggestion = (entry) => {
+    const duplicate = findActiveDuplicate(entry.text);
+    const rest = input.split(/;|\n|(?<!\d),|,(?!\d)/).slice(0, -1).join(", ");
+    setInput(rest ? `${rest}, ` : "");
+    if (duplicate) { bringBack(duplicate); return; }
     const now = Date.now();
-    setTodos(prev => sortItems([normalizeItem({ id, text, category: pref ?? "Iné", createdAt: now, updatedAt: now }), ...prev]));
-    if (pref || !configured || !sortByCategory) return;
-    try {
-      const category = await categorizeItem(text);
-      setTodos(prev => prev.map(t => t.id === id ? { ...t, category, updatedAt: Date.now() } : t));
-    } catch (err) { setErrorMsg(err.message ?? "Kategorizácia zlyhala."); }
+    const item = normalizeItem({
+      id: crypto.randomUUID(), text: entry.text,
+      category: prefs[normalize(entry.text)] ?? entry.category ?? "Iné", createdAt: now, updatedAt: now,
+    });
+    setTodos(prev => sortItems([item, ...prev]));
+    recordHistory([item]);
+  };
+
+  // ── Diktovanie (Web Speech API, slovenčina) ─────────────────────
+  const addTextRef = useRef(addText);
+  addTextRef.current = addText;
+  const toggleVoice = () => {
+    if (recognitionRef.current) { recognitionRef.current.stop(); return; }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.lang = "sk-SK";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    const typed = input.trim();
+    let heard = "";
+    recognition.onresult = (e) => {
+      let interim = "";
+      heard = "";
+      for (const result of e.results) {
+        if (result.isFinal) heard += result[0].transcript;
+        else interim += result[0].transcript;
+      }
+      setInput([typed, (heard + interim).trim()].filter(Boolean).join(", "));
+    };
+    recognition.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setErrorMsg("Appka nemá prístup k mikrofónu — povoľ ho v nastaveniach prehliadača.");
+      } else if (e.error !== "no-speech" && e.error !== "aborted") {
+        setErrorMsg(`Diktovanie zlyhalo (${e.error}).`);
+      }
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+      const text = [typed, heard.trim()].filter(Boolean).join(", ");
+      if (heard.trim()) addTextRef.current(text, { voice: true });
+      else setInput(typed);
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    setErrorMsg(null);
+    recognition.start();
   };
 
   const toggleSortByCategory = () => {
@@ -755,6 +1096,7 @@ export default function App() {
       });
 
       if (fresh.length) setTodos(prev => sortItems([...fresh, ...prev]));
+      recordHistory(fresh);
       showNotice(
         skipped
           ? `Pridaných ${fresh.length} · ${skipped} už v zozname bolo`
@@ -787,7 +1129,11 @@ export default function App() {
     if (!todo) return;
     const key = normalize(todo.text);
     if (!key) return;
-    setPrefs(prev => { const next = { ...prev, [key]: category }; localStorage.setItem(PREFS_KEY, JSON.stringify(next)); return next; });
+    const hist = settingsRef.current[`hist:${key}`]?.value;
+    writeSettings({
+      [`pref:${key}`]: category,
+      ...(hist ? { [`hist:${key}`]: { ...hist, category } } : {}),
+    });
   };
 
   const clearCompleted = () => {
@@ -814,6 +1160,26 @@ export default function App() {
       done,
     };
   }, [visible, sortByCategory, catOrder]);
+
+  // Ponuky pod poľom: bez písania to, čo kupuješ najčastejšie; počas písania
+  // našepkávač z histórie (hľadá sa v poslednej položke za čiarkou).
+  const suggestions = useMemo(() => {
+    const onList = new Set(visible.filter(t => !t.completed).map(t => normalize(t.text)));
+    const query = normalize(input.split(/;|\n|(?<!\d),|,(?!\d)/).pop() ?? "");
+    const pool = Object.entries(history)
+      .filter(([key, h]) => h?.text && !onList.has(key) && key !== query);
+    if (query) {
+      return pool
+        .filter(([key]) => key.includes(query))
+        .sort(([ka, a], [kb, b]) => (kb.startsWith(query) - ka.startsWith(query)) || (b.count - a.count))
+        .slice(0, 6).map(([, h]) => h);
+    }
+    return pool
+      .filter(([, h]) => h.count >= 2)
+      .sort(([, a], [, b]) => (b.count - a.count) || (b.lastAt - a.lastAt))
+      .slice(0, 8).map(([, h]) => h);
+  }, [history, visible, input]);
+  const canDictate = typeof window !== "undefined" && !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
   const remaining = visible.filter(t => !t.completed).length;
   const inCart = visible.length - remaining;
@@ -902,14 +1268,14 @@ export default function App() {
           background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)",
           borderRadius: "0.875rem", boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
           border: "1px solid #e2e8f0", padding: "0.375rem", marginBottom: "1.25rem",
-          display: "flex", gap: "0.375rem", alignItems: "center",
         }}>
+        <div style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
           <input
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOne(); } }}
-            placeholder={isScanning ? "Spracovávam…" : "Pridať položku…"}
+            placeholder={isScanning ? "Spracovávam…" : listening ? "Počúvam…" : "Pridať položku…"}
             disabled={isScanning}
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
@@ -920,6 +1286,12 @@ export default function App() {
           <input type="file" accept="image/*" capture="environment" ref={cameraRef} onChange={handleImage} style={{ display: "none" }} />
           <input type="file" accept="image/*" ref={galleryRef} onChange={handleImage} style={{ display: "none" }} />
 
+          {canDictate && (
+            <button onClick={toggleVoice} disabled={isScanning} title={listening ? "Zastaviť diktovanie" : "Nadiktovať"} aria-pressed={listening}
+              style={{ ...btnStyle, ...(listening ? { background: "#fee2e2", borderColor: "#fca5a5", color: "#dc2626", animation: "pulse 1.2s ease-in-out infinite" } : {}) }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
+            </button>
+          )}
           <button onClick={() => cameraRef.current?.click()} disabled={isScanning} title="Odfotiť" style={btnStyle}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           </button>
@@ -934,6 +1306,23 @@ export default function App() {
           }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
+        </div>
+
+        {suggestions.length > 0 && !isScanning && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", overflowX: "auto", padding: "0.4rem 0.2rem 0.1rem", scrollbarWidth: "none" }}>
+            {!input.trim() && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#94a3b8", whiteSpace: "nowrap", paddingRight: 2 }}>Často:</span>}
+            {suggestions.map(h => (
+              <button key={h.text} onClick={() => addSuggestion(h)} title={`Pridať ${h.text}`}
+                style={{
+                  flexShrink: 0, whiteSpace: "nowrap", cursor: "pointer",
+                  fontSize: "0.72rem", fontWeight: 600, padding: "0.3rem 0.6rem", borderRadius: 999,
+                  background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe",
+                }}>
+                + {h.text}
+              </button>
+            ))}
+          </div>
+        )}
         </div>
 
         {/* Scanning indicator */}
@@ -1031,7 +1420,8 @@ export default function App() {
         </div>
       )}
 
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.35); } 50% { box-shadow: 0 0 0 6px rgba(220,38,38,0); } }`}</style>
     </div>
   );
 }

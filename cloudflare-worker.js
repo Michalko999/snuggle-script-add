@@ -10,8 +10,9 @@
 //        - ALLOWED_ORIGINS   (Text, voliteľné) = https://michalko999.github.io
 //   3. Settings → Bindings → D1 database → nabinduj ako  DB   (odporúčané)
 //        Storage & Databases → D1 → Create database (napr. "nakupny-zoznam"),
-//        tabuľku si worker vytvorí sám. D1 je hneď konzistentná, takže zmena
-//        z jedného mobilu je na druhom do pár sekúnd.
+//        tabuľky si worker vytvorí sám. D1 je hneď konzistentná, takže zmena
+//        z jedného mobilu je na druhom do pár sekúnd. Okrem položiek drží aj
+//        nastavenia: naučené kategórie, poradie uličiek a históriu nákupov.
 //      alebo staršie KV Namespace nabindované ako  LIST
 //        KV sa na ostatné miesta Cloudflaru dostane až do ~60 s, preto je pomalšie.
 //        Ak máš nabindované obe, zoznam sa pri prvom spustení sám prenesie z KV do D1.
@@ -45,22 +46,32 @@ export default {
         return json({ error: "Worker nemá nabindované úložisko (D1 'DB' ani KV 'LIST')." }, 501, cors);
       }
 
+      // Nastavenia (naučené kategórie, poradie uličiek, história nákupov) sa
+      // posielajú len tie, čo sa zmenili od verzie, ktorú už mobil má.
+      const settingsSince = Number(new URL(request.url).searchParams.get("settingsSince")) || 0;
+
       if (request.method === "GET") {
-        return json({ items: await loadItems(env) }, 200, cors);
+        return json({ items: await loadItems(env), ...(await loadSettings(env, settingsSince)) }, 200, cors);
       }
 
       if (request.method === "PUT") {
-        let items;
+        let items, settings;
         try {
           const parsed = JSON.parse(await request.text());
           if (!Array.isArray(parsed.items)) throw new Error("chýba pole 'items'");
           items = parsed.items.filter(it => it && typeof it.id === "string");
+          settings = validSettings(parsed.settings);
         } catch (e) {
           return json({ error: "Neplatné dáta: " + e.message }, 400, cors);
         }
+        if (settings.length) await mergeSettings(env, settings);
         // Zlúčenie robí server, takže mobil, ktorý ešte nevidel cudziu zmenu,
         // ju svojím zoznamom neprepíše. Späť dostane už zlúčený zoznam.
-        return json({ items: await mergeItems(env, items), updatedAt: Date.now() }, 200, cors);
+        return json({
+          items: await mergeItems(env, items),
+          ...(await loadSettings(env, settingsSince)),
+          updatedAt: Date.now(),
+        }, 200, cors);
       }
 
       return json({ error: "Method Not Allowed" }, 405, cors);
@@ -94,6 +105,7 @@ export default {
 // KV: celý zoznam pod jedným kľúčom, zlúčený v workeri.
 
 const TOMBSTONE_MS = 7 * 24 * 60 * 60 * 1000; // rovnako ako v appke
+const SETTINGS_KEY = "shopping-settings";
 let d1Ready = false;
 
 async function prepareD1(env) {
@@ -101,6 +113,11 @@ async function prepareD1(env) {
   await env.DB.exec(
     "CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL)"
   );
+  // server_at = kedy záznam prišiel na server; podľa neho mobil dostáva len novinky
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, server_at INTEGER NOT NULL, value TEXT NOT NULL)"
+  );
+  await env.DB.exec("CREATE INDEX IF NOT EXISTS settings_server_at ON settings (server_at)");
   // Prvé spustenie s D1: prenes doterajší zoznam z KV, nech sa nič nestratí.
   if (env.LIST) {
     const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM items").first("n");
@@ -150,6 +167,60 @@ async function mergeItems(env, incoming) {
   const merged = [...byId.values()].filter(it => !(it.deleted && it.updatedAt < cutoff));
   await env.LIST.put(LIST_KEY, JSON.stringify({ items: merged, updatedAt: Date.now() }));
   return merged;
+}
+
+// ── Nastavenia: každý kľúč zvlášť, novšia zmena (updatedAt) vyhráva ──
+
+function validSettings(raw) {
+  if (raw == null) return [];
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("'settings' musí byť objekt");
+  const entries = Object.entries(raw);
+  if (entries.length > 1000) throw new Error("príliš veľa nastavení naraz");
+  return entries.filter(([key, entry]) =>
+    key.length <= 200 && entry && typeof entry === "object" && Number.isFinite(Number(entry.updatedAt))
+    && JSON.stringify(entry.value ?? null).length <= 4000);
+}
+
+async function mergeSettings(env, entries) {
+  const now = Date.now();
+  if (env.DB) {
+    await prepareD1(env);
+    const stmt = env.DB.prepare(
+      `INSERT INTO settings (key, updated_at, server_at, value) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(key) DO UPDATE SET updated_at = excluded.updated_at, server_at = excluded.server_at, value = excluded.value
+       WHERE excluded.updated_at > settings.updated_at`
+    );
+    const statements = entries.map(([key, e]) => stmt.bind(key, Number(e.updatedAt), now, JSON.stringify(e.value ?? null)));
+    for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
+    return;
+  }
+  const stored = JSON.parse((await env.LIST.get(SETTINGS_KEY)) ?? "{}");
+  let changed = false;
+  entries.forEach(([key, e]) => {
+    if (!stored[key] || Number(e.updatedAt) > stored[key].updatedAt) {
+      stored[key] = { value: e.value ?? null, updatedAt: Number(e.updatedAt), serverAt: now };
+      changed = true;
+    }
+  });
+  if (changed) await env.LIST.put(SETTINGS_KEY, JSON.stringify(stored));
+}
+
+async function loadSettings(env, since) {
+  if (env.DB) {
+    await prepareD1(env);
+    const { results } = await env.DB.prepare("SELECT key, updated_at, value FROM settings WHERE server_at >= ?1").bind(since).all();
+    const version = (await env.DB.prepare("SELECT MAX(server_at) AS v FROM settings").first("v")) ?? 0;
+    return {
+      settings: Object.fromEntries(results.map(r => [r.key, { value: JSON.parse(r.value), updatedAt: r.updated_at }])),
+      settingsVersion: version,
+    };
+  }
+  const stored = JSON.parse((await env.LIST.get(SETTINGS_KEY)) ?? "{}");
+  const entries = Object.entries(stored);
+  return {
+    settings: Object.fromEntries(entries.filter(([, e]) => e.serverAt >= since).map(([k, e]) => [k, { value: e.value, updatedAt: e.updatedAt }])),
+    settingsVersion: entries.reduce((max, [, e]) => Math.max(max, e.serverAt), 0),
+  };
 }
 
 // ── Pomocné ─────────────────────────────────────────────────────────

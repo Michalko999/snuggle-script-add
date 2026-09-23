@@ -1,6 +1,6 @@
 {
   "name": "Nákupný zoznam",
-  "short_name": "Zoznam",
+  "short_name": "Nákupný zoznam",
   "description": "Inteligentný nákupný zoznam s rozpoznávaním lístka z fotky",
   "start_url": ".",
   "display": "standalone",

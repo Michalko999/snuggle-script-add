@@ -58,7 +58,7 @@ const CATEGORY_STYLES = {
   "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "2.3";
+const APP_VERSION = "2.4";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -70,6 +70,7 @@ const LEGACY_APIKEY_KEY = "anthropic-api-key";
 const SETTINGS_KEY = "synced-settings-v1";
 const SETTINGS_DIRTY_KEY = "synced-settings-dirty-v1";
 const HISTORY_SEEDED_KEY = "history-seeded-v1";
+const DEVICE_ID_KEY = "device-id-v1";
 
 // Zmazané položky sa nechávajú ako náhrobok, aby sa mazanie prenieslo
 // na ostatné zariadenia a položka sa pri synchronizácii nevrátila.
@@ -91,6 +92,13 @@ function workerBase() {
 
 function appToken() {
   return (localStorage.getItem(TOKEN_KEY) ?? "").trim();
+}
+
+// Náhodné id tohto mobilu — worker podľa neho vie, komu upozornenie neposlať.
+function deviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(DEVICE_ID_KEY, id); }
+  return id;
 }
 
 function normalize(text) {
@@ -390,7 +398,7 @@ async function putList(items, settings, settingsSince, { keepalive = false } = {
   const res = await fetch(`${base}/list?settingsSince=${settingsSince}`, {
     method: "PUT",
     headers: { "content-type": "application/json", "x-app-token": appToken() },
-    body: JSON.stringify({ items, settings, updatedAt: Date.now() }),
+    body: JSON.stringify({ items, settings, deviceId: deviceId(), updatedAt: Date.now() }),
     keepalive,
   });
   if (res.status === 501) return null;
@@ -432,9 +440,56 @@ function mergeLists(local, remote) {
   return sortItems([...byId.values()].filter(it => !(it.deleted && it.updatedAt < cutoff)));
 }
 
+// ── Upozornenia (Web Push) ───────────────────────────────────────
+
+const pushSupported = () =>
+  "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+function b64urlToUint8(s) {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=");
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+
+async function workerPost(path, body) {
+  const res = await fetch(`${workerBase()}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-app-token": appToken() },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 501) throw new Error("Worker nemá pripojenú D1 databázu — upozornenia bez nej nefungujú.");
+  if (!res.ok) throw new Error(`Worker odpovedal chybou ${res.status}.`);
+}
+
+async function enablePush() {
+  if (Notification.permission !== "granted" && (await Notification.requestPermission()) !== "granted") {
+    throw new Error("Upozornenia sú zablokované — povoľ ich v nastaveniach prehliadača pre túto stránku.");
+  }
+  const res = await fetch(`${workerBase()}/push/key`, { headers: { "x-app-token": appToken() } });
+  if (res.status === 501) throw new Error("Worker nemá pripojenú D1 databázu — upozornenia bez nej nefungujú.");
+  if (res.status === 404 || res.status === 405) throw new Error("Worker je starší — nahraj doň nový cloudflare-worker.js.");
+  if (!res.ok) throw new Error(`Worker odpovedal chybou ${res.status}.`);
+  const { publicKey } = await res.json();
+  const reg = await navigator.serviceWorker.ready;
+  const key = b64urlToUint8(publicKey);
+  let sub = await reg.pushManager.getSubscription();
+  // Staré prihlásenie s iným kľúčom (napr. z pripomienok) treba najprv zrušiť.
+  const sameKey = sub?.options?.applicationServerKey &&
+    new Uint8Array(sub.options.applicationServerKey).every((b, i) => b === key[i]);
+  if (sub && !sameKey) { await sub.unsubscribe(); sub = null; }
+  sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  await workerPost("/push/subscribe", { subscription: sub.toJSON(), deviceId: deviceId() });
+}
+
+async function disablePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  await workerPost("/push/unsubscribe", { endpoint: sub?.endpoint ?? "", deviceId: deviceId() }).catch(() => {});
+  await sub?.unsubscribe();
+}
+
 // ── Components ───────────────────────────────────────────────────
 
-function SettingsModal({ catOrder, onMoveCategory, onSave, onClose }) {
+function SettingsModal({ catOrder, onMoveCategory, onSave, onClose, push, onTogglePush }) {
   const [proxy, setProxy] = useState(() => localStorage.getItem(PROXY_KEY) ?? "");
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   return (
@@ -466,6 +521,30 @@ function SettingsModal({ catOrder, onMoveCategory, onSave, onClose }) {
           placeholder="heslo z APP_TOKEN"
           style={{ width: "100%", border: "1.5px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem 0.8rem", fontSize: "0.875rem", outline: "none", marginBottom: "1.25rem", boxSizing: "border-box" }}
         />
+
+        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Upozornenia</p>
+        <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "8px", lineHeight: 1.5 }}>
+          {push.state === "unsupported"
+            ? "Tento prehliadač upozornenia nevie. Na iPhone pridaj appku na plochu (Safari → Zdieľať → Pridať na plochu) a zapni ich z nej."
+            : "Keď na inom mobile niekto pridá položku, tento mobil ukáže upozornenie — aj keď je appka zatvorená. Zapína sa na každom mobile zvlášť."}
+        </p>
+        {push.state !== "unsupported" && (
+          <button onClick={onTogglePush} disabled={push.state === "busy" || !push.configured}
+            style={{
+              width: "100%", marginBottom: push.error ? "6px" : "1.25rem", padding: "0.6rem", borderRadius: "0.5rem",
+              fontSize: "0.85rem", fontWeight: 600, cursor: push.state === "busy" || !push.configured ? "not-allowed" : "pointer",
+              border: "1px solid", opacity: push.configured ? 1 : 0.5,
+              ...(push.state === "on"
+                ? { background: "#ecfdf5", borderColor: "#a7f3d0", color: "#047857" }
+                : { background: "#eef2ff", borderColor: "#c7d2fe", color: "#4338ca" }),
+            }}>
+            {!push.configured ? "Najprv ulož URL Workera a token"
+              : push.state === "busy" ? "Chvíľu…"
+              : push.state === "on" ? "✓ Zapnuté na tomto mobile — vypnúť"
+              : "Zapnúť upozornenia"}
+          </button>
+        )}
+        {push.error && <p style={{ fontSize: "0.75rem", color: "#be123c", marginBottom: "1.25rem", lineHeight: 1.5 }}>{push.error}</p>}
 
         <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Poradie kategórií</p>
         <p style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "8px", lineHeight: 1.5 }}>
@@ -634,6 +713,8 @@ export default function App() {
   const [sortByCategory, setSortByCategory] = useState(true);
   const [syncState, setSyncState] = useState("off"); // off | syncing | ok | error
   const [listening, setListening] = useState(false);
+  const [pushState, setPushState] = useState("off"); // unsupported | off | on | busy
+  const [pushError, setPushError] = useState(null);
 
   const undoTimer = useRef(null);
   const noticeTimer = useRef(null);
@@ -649,6 +730,9 @@ export default function App() {
   // Starší worker nastavenia nepozná; kým to nevieme, skúšame ich posielať.
   const serverKeepsSettingsRef = useRef(true);
   const recognitionRef = useRef(null);
+  // Kým AI dolaďuje práve pridané položky, so synchronizáciou chvíľu počkáme —
+  // druhý mobil tak dostane jedno upozornenie s hotovými názvami, nie dve.
+  const aiPendingRef = useRef({ count: 0, since: 0 });
 
   useEffect(() => { todosRef.current = todos; }, [todos]);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
@@ -809,6 +893,8 @@ export default function App() {
     });
     const hasSettings = Object.keys(sent).length > 0;
     if (payload === lastSyncedRef.current && !(hasSettings && serverKeepsSettingsRef.current)) return;
+    const ai = aiPendingRef.current;
+    if (ai.count > 0 && !opts?.keepalive && Date.now() - ai.since < 8000) return;
     setSyncState("syncing");
     try {
       const remote = await putList(items, hasSettings ? sent : undefined, settingsVersionRef.current, opts);
@@ -832,6 +918,9 @@ export default function App() {
   // Po stiahnutí skúsime aj odoslať — inak by zmena spravená offline ležala
   // v mobile dovtedy, kým sa zoznamu znova nedotkneš. Pri pomalej sieti
   // sa dopyty nenavrstvujú: kým jeden beží, ďalší sa preskočí.
+  const pushRef = useRef(push);
+  pushRef.current = push;
+
   const syncing = useRef(false);
   const syncNow = useCallback(async () => {
     if (syncing.current) return;
@@ -858,6 +947,46 @@ export default function App() {
       window.removeEventListener("online", syncNow);
     };
   }, [hydrated, configured, syncNow, push]);
+
+  // Service worker dal vedieť, že prišlo upozornenie — stiahni zoznam hneď.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (e) => { if (e.data?.type === "sync") syncNow(); };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [syncNow]);
+
+  // Sú upozornenia na tomto mobile zapnuté? Ak áno, pripomeň to workeru
+  // (mohol prihlásenie zabudnúť, napr. po výmene databázy).
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!pushSupported()) { setPushState("unsupported"); return; }
+    if (!configured) return;
+    let cancelled = false;
+    navigator.serviceWorker.ready
+      .then(reg => reg.pushManager.getSubscription())
+      .then(sub => {
+        if (cancelled) return;
+        const on = !!sub && Notification.permission === "granted";
+        setPushState(on ? "on" : "off");
+        if (on) workerPost("/push/subscribe", { subscription: sub.toJSON(), deviceId: deviceId() }).catch(() => {});
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [hydrated, configured]);
+
+  const togglePush = async () => {
+    const wasOn = pushState === "on";
+    setPushState("busy");
+    setPushError(null);
+    try {
+      if (wasOn) { await disablePush(); setPushState("off"); }
+      else { await enablePush(); setPushState("on"); }
+    } catch (err) {
+      setPushError(err.message ?? "Upozornenia sa nepodarilo zapnúť.");
+      setPushState(wasOn ? "on" : "off");
+    }
+  };
 
   useEffect(() => {
     if (!hydrated || !configured) return;
@@ -950,12 +1079,20 @@ export default function App() {
     if (!configured) { recordHistory(unknown.map(f => f.item)); return; }
 
     let parsed;
+    const ai = aiPendingRef.current;
+    if (!ai.count) ai.since = Date.now();
+    ai.count++;
     try {
       parsed = await parseItems(unknown.map(f => f.raw));
     } catch (err) {
       recordHistory(unknown.map(f => f.item));
       setErrorMsg(err.message ?? "Kategorizácia zlyhala.");
       return;
+    } finally {
+      ai.count--;
+      // Odložené odoslanie teraz dobehne (aj keď AI nič nezmenila).
+      clearTimeout(pushTimer.current);
+      pushTimer.current = setTimeout(() => pushRef.current(), PUSH_DELAY_MS);
     }
 
     // Náhrady spočítame vopred, aby sme ich poznali aj pre históriu.
@@ -1202,6 +1339,8 @@ export default function App() {
           onMoveCategory={moveCategory}
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
+          push={{ state: pushState, error: pushError, configured }}
+          onTogglePush={togglePush}
         />
       )}
 

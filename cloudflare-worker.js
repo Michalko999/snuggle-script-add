@@ -18,15 +18,20 @@
 //        Ak máš nabindované obe, zoznam sa pri prvom spustení sám prenesie z KV do D1.
 //      (bez D1 aj KV appka funguje, len sa zoznam nesynchronizuje medzi zariadeniami)
 //
+// Upozornenia (Web Push) potrebujú D1. Kľúče na podpisovanie (VAPID) si worker
+// vytvorí sám a uloží do D1; ak má nastavené premenné VAPID_PUBLIC a VAPID_PRIVATE,
+// použije tie. Keď mobil pridá položky, ostatné mobily so zapnutými
+// upozorneniami dostanú jedno upozornenie so zoznamom pridaného.
+//
 // Po zrušení pripomienok sa už nepoužívajú a môžeš ich v Cloudflare zmazať:
-//   premenné VAPID_PUBLIC / VAPID_PRIVATE / VAPID_SUBJECT, KV binding "reminders"
-//   a hlavne Cron Trigger */3 * * * * (inak sa spúšťa každé 3 minúty nadarmo).
+//   KV binding "reminders" a hlavne Cron Trigger */3 * * * * (inak sa spúšťa
+//   každé 3 minúty nadarmo). Premenné VAPID_* môžu zostať — použijú sa na upozornenia.
 // ───────────────────────────────────────────────────────────────────
 
 const LIST_KEY = "shopping-list";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const cors = corsHeaders(request, env);
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
@@ -39,6 +44,41 @@ export default {
     }
 
     const path = new URL(request.url).pathname;
+
+    // ── Upozornenia (Web Push) ──────────────────────────────────────
+    if (path.startsWith("/push/")) {
+      if (!env.DB) return json({ error: "Upozornenia potrebujú D1 databázu (binding DB)." }, 501, cors);
+      await prepareD1(env);
+
+      if (path === "/push/key" && request.method === "GET") {
+        return json({ publicKey: (await vapidKeys(env)).publicKey }, 200, cors);
+      }
+      if (request.method !== "POST") return json({ error: "Method Not Allowed" }, 405, cors);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "Neplatné dáta" }, 400, cors); }
+
+      if (path === "/push/subscribe") {
+        const sub = body?.subscription;
+        const deviceId = cleanDeviceId(body?.deviceId);
+        if (!sub?.endpoint?.startsWith("https://") || !sub.keys?.p256dh || !sub.keys?.auth || !deviceId) {
+          return json({ error: "Chýba subscription alebo deviceId" }, 400, cors);
+        }
+        // Jeden mobil = jedno prihlásenie; staré (napr. po reinštalácii) nahradíme.
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM push_subs WHERE device_id = ?1").bind(deviceId),
+          env.DB.prepare("INSERT OR REPLACE INTO push_subs (endpoint, device_id, data, created_at) VALUES (?1, ?2, ?3, ?4)")
+            .bind(sub.endpoint, deviceId, JSON.stringify({ endpoint: sub.endpoint, keys: sub.keys }), Date.now()),
+        ]);
+        return json({ ok: true }, 200, cors);
+      }
+      if (path === "/push/unsubscribe") {
+        const deviceId = cleanDeviceId(body?.deviceId);
+        await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?1 OR device_id = ?2")
+          .bind(String(body?.endpoint ?? ""), deviceId ?? "").run();
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "Not Found" }, 404, cors);
+    }
 
     // ── Synchronizácia zoznamu ──────────────────────────────────────
     if (path === "/list") {
@@ -55,20 +95,26 @@ export default {
       }
 
       if (request.method === "PUT") {
-        let items, settings;
+        let items, settings, deviceId;
         try {
           const parsed = JSON.parse(await request.text());
           if (!Array.isArray(parsed.items)) throw new Error("chýba pole 'items'");
           items = parsed.items.filter(it => it && typeof it.id === "string");
           settings = validSettings(parsed.settings);
+          deviceId = cleanDeviceId(parsed.deviceId);
         } catch (e) {
           return json({ error: "Neplatné dáta: " + e.message }, 400, cors);
         }
         if (settings.length) await mergeSettings(env, settings);
+        // Položky, ktoré server ešte nepozná, sú novo pridané — ohlásime ich
+        // ostatným mobilom. Odoslanie beží na pozadí, odpoveď nečaká.
+        const added = env.DB && deviceId ? await newItems(env, items) : [];
         // Zlúčenie robí server, takže mobil, ktorý ešte nevidel cudziu zmenu,
         // ju svojím zoznamom neprepíše. Späť dostane už zlúčený zoznam.
+        const merged = await mergeItems(env, items);
+        if (added.length) ctx?.waitUntil(notifyOthers(env, deviceId, added).catch(e => console.log("[push]", e.message)));
         return json({
-          items: await mergeItems(env, items),
+          items: merged,
           ...(await loadSettings(env, settingsSince)),
           updatedAt: Date.now(),
         }, 200, cors);
@@ -118,6 +164,8 @@ async function prepareD1(env) {
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, updated_at INTEGER NOT NULL, server_at INTEGER NOT NULL, value TEXT NOT NULL)"
   );
   await env.DB.exec("CREATE INDEX IF NOT EXISTS settings_server_at ON settings (server_at)");
+  await env.DB.exec("CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, device_id TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL)");
+  await env.DB.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   // Prvé spustenie s D1: prenes doterajší zoznam z KV, nech sa nič nestratí.
   if (env.LIST) {
     const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM items").first("n");
@@ -223,6 +271,135 @@ async function loadSettings(env, since) {
   };
 }
 
+// ── Upozornenia na nové položky ────────────────────────────────────
+
+function cleanDeviceId(raw) {
+  return typeof raw === "string" && /^[A-Za-z0-9-]{8,64}$/.test(raw) ? raw : null;
+}
+
+async function newItems(env, incoming) {
+  const candidates = incoming.filter(it => !it.deleted && !it.completed && typeof it.text === "string");
+  if (!candidates.length) return [];
+  await prepareD1(env);
+  const known = new Set();
+  for (let i = 0; i < candidates.length; i += 90) {
+    const chunk = candidates.slice(i, i + 90);
+    const { results } = await env.DB.prepare(`SELECT id FROM items WHERE id IN (${chunk.map((_, j) => `?${j + 1}`).join(",")})`)
+      .bind(...chunk.map(it => it.id)).all();
+    results.forEach(r => known.add(r.id));
+  }
+  return candidates.filter(it => !known.has(it.id));
+}
+
+function describeAdded(items) {
+  const names = items.map(it => (it.qty ? `${it.text} (${it.qty})` : it.text));
+  const n = names.length;
+  if (n === 1) return { title: "Nákupný zoznam", body: `Pridané: ${names[0]}` };
+  const word = n <= 4 ? "položky" : "položiek";
+  const shown = names.slice(0, 5).join(", ");
+  return { title: `Pridané ${n} ${word}`, body: n > 5 ? `${shown} a ďalšie ${n - 5}` : shown };
+}
+
+async function notifyOthers(env, fromDevice, items) {
+  const { results } = await env.DB.prepare("SELECT endpoint, data FROM push_subs WHERE device_id != ?1").bind(fromDevice).all();
+  if (!results.length) return;
+  const message = { ...describeAdded(items), tag: "pridane" };
+  const keys = await vapidKeys(env);
+  await Promise.all(results.map(async row => {
+    const status = await sendPush(keys, JSON.parse(row.data), message).catch(() => 0);
+    // 404/410 = mobil upozornenia zrušil alebo appku odinštaloval
+    if (status === 404 || status === 410) await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?1").bind(row.endpoint).run();
+    else if (status >= 300 || status === 0) console.log(`[push] ${status} pre ${new URL(row.endpoint).host}`);
+  }));
+}
+
+// Kľúče VAPID: z premenných, ak sú nastavené; inak ich worker raz vytvorí a uloží do D1.
+async function vapidKeys(env) {
+  const subject = env.VAPID_SUBJECT || "https://michalko999.github.io/snuggle-script-add/";
+  if (env.VAPID_PUBLIC && env.VAPID_PRIVATE) return { publicKey: env.VAPID_PUBLIC, privateJwk: env.VAPID_PRIVATE, subject };
+  let stored = await env.DB.prepare("SELECT value FROM meta WHERE key = 'vapid'").first("value");
+  if (!stored) {
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const publicKey = b64url(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+    const privateJwk = JSON.stringify(await crypto.subtle.exportKey("jwk", pair.privateKey));
+    // Pri súbehu dvoch požiadaviek vyhrá prvý zápis a obe použijú ten istý kľúč.
+    await env.DB.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('vapid', ?1)").bind(JSON.stringify({ publicKey, privateJwk })).run();
+    stored = await env.DB.prepare("SELECT value FROM meta WHERE key = 'vapid'").first("value");
+  }
+  return { ...JSON.parse(stored), subject };
+}
+
+// ── Web Push (RFC 8291 aes128gcm + VAPID RFC 8292) ──────────────────
+
+async function sendPush(keys, subscription, message) {
+  const encrypted = await encryptPayload(subscription, JSON.stringify(message));
+  const jwt = await vapidJWT(subscription.endpoint, keys.privateJwk, keys.subject);
+  const res = await fetch(subscription.endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `vapid t=${jwt}, k=${keys.publicKey}`,
+      "Content-Encoding": "aes128gcm",
+      "Content-Type": "application/octet-stream",
+      "TTL": "86400",
+      "Urgency": "high",
+    },
+    body: encrypted,
+  });
+  return res.status;
+}
+
+async function vapidJWT(endpoint, privateJwkStr, subject) {
+  const u = new URL(endpoint);
+  const aud = `${u.protocol}//${u.host}`;
+  const header = { typ: "JWT", alg: "ES256" };
+  const payload = { aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: subject || "mailto:admin@example.com" };
+  const enc = (o) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const signingInput = `${enc(header)}.${enc(payload)}`;
+  const jwk = JSON.parse(privateJwkStr);
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(signingInput));
+  return `${signingInput}.${b64url(new Uint8Array(sig))}`;
+}
+
+async function encryptPayload(subscription, payloadStr) {
+  const uaPublic = b64urlToBytes(subscription.keys.p256dh); // 65 B
+  const authSecret = b64urlToBytes(subscription.keys.auth); // 16 B
+
+  const serverKeys = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey("raw", serverKeys.publicKey)); // 65 B
+  const uaKey = await crypto.subtle.importKey("raw", uaPublic, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, serverKeys.privateKey, 256));
+
+  const hmac = async (keyBytes, dataBytes) => {
+    const k = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return new Uint8Array(await crypto.subtle.sign("HMAC", k, dataBytes));
+  };
+
+  // RFC 8291 — odvodenie IKM
+  const keyInfo = concat(new TextEncoder().encode("WebPush: info\0"), uaPublic, asPublic);
+  const prkKey = await hmac(authSecret, ecdhSecret);
+  const ikm = (await hmac(prkKey, concat(keyInfo, Uint8Array.of(1)))).slice(0, 32);
+
+  // RFC 8188 — obsahový kľúč
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const prk = await hmac(salt, ikm);
+  const cek = (await hmac(prk, concat(new TextEncoder().encode("Content-Encoding: aes128gcm\0"), Uint8Array.of(1)))).slice(0, 16);
+  const nonce = (await hmac(prk, concat(new TextEncoder().encode("Content-Encoding: nonce\0"), Uint8Array.of(1)))).slice(0, 12);
+
+  const plaintext = concat(new TextEncoder().encode(payloadStr), Uint8Array.of(2)); // 0x02 = posledný záznam
+  const aesKey = await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, plaintext));
+
+  // hlavička: salt(16) || rs(4) || idlen(1) || keyid(asPublic 65)
+  const header = new Uint8Array(16 + 4 + 1 + asPublic.length);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, 4096, false);
+  header[20] = asPublic.length;
+  header.set(asPublic, 21);
+
+  return concat(header, ciphertext);
+}
+
 // ── Pomocné ─────────────────────────────────────────────────────────
 
 function corsHeaders(request, env) {
@@ -243,4 +420,27 @@ function json(obj, status = 200, cors = {}) {
     status,
     headers: { ...cors, "content-type": "application/json" },
   });
+}
+
+function b64urlToBytes(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+function b64url(arr) {
+  let bin = "";
+  for (const b of arr) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function concat(...arrs) {
+  const len = arrs.reduce((a, x) => a + x.length, 0);
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
 }

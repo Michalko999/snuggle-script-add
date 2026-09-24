@@ -58,7 +58,7 @@ const CATEGORY_STYLES = {
   "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "2.4";
+const APP_VERSION = "2.5";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -476,8 +476,39 @@ async function enablePush() {
   const sameKey = sub?.options?.applicationServerKey &&
     new Uint8Array(sub.options.applicationServerKey).every((b, i) => b === key[i]);
   if (sub && !sameKey) { await sub.unsubscribe(); sub = null; }
-  sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  sub ??= await subscribeWithRetry(reg, key);
   await workerPost("/push/subscribe", { subscription: sub.toJSON(), deviceId: deviceId() });
+}
+
+// Služba Googlu prihlásenie občas odmietne („push service error") a o chvíľu
+// prejde. Skúsime to preto trikrát, zakaždým na čisto.
+async function subscribeWithRetry(reg, key) {
+  const waits = [1000, 2500];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    } catch (err) {
+      const retryable = err?.name === "AbortError" || err?.name === "InvalidStateError";
+      if (!retryable || attempt >= waits.length) throw new Error(pushErrorText(err));
+      await (await reg.pushManager.getSubscription())?.unsubscribe().catch(() => {});
+      await new Promise(r => setTimeout(r, waits[attempt]));
+    }
+  }
+}
+
+function pushErrorText(err) {
+  const msg = String(err?.message ?? "");
+  if (err?.name === "NotAllowedError") {
+    return "Upozornenia sú zablokované — povoľ ich v nastaveniach prehliadača pre túto stránku.";
+  }
+  if (/not available/i.test(msg)) {
+    return "Tento telefón nemá dostupnú službu na upozornenia — chýbajú Služby Google Play, alebo ich tento prehliadač nepoužíva. Skús appku nainštalovať cez Google Chrome.";
+  }
+  if (err?.name === "AbortError" || /push service/i.test(msg)) {
+    return "Služba Googlu na upozornenia prihlásenie odmietla ani na tretí pokus. Skús to o chvíľu znova. Ak to nepomôže, skontroluj, " +
+      "že appka beží v Google Chrome, Služby Google Play sú zapnuté a nemajú obmedzenú batériu, a že blokovač reklám, VPN ani súkromné DNS neblokujú Google.";
+  }
+  return `Upozornenia sa nepodarilo zapnúť (${msg || err?.name || "neznáma chyba"}).`;
 }
 
 async function disablePush() {

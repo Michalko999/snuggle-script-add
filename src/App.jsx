@@ -58,7 +58,7 @@ const CATEGORY_STYLES = {
   "Iné":                  { dot: "#94a3b8", chip: { bg: "#f8fafc", color: "#475569", border: "#e2e8f0" } },
 };
 
-const APP_VERSION = "2.5";
+const APP_VERSION = "2.6";
 const STORAGE_KEY = "todos-v3";
 const PREFS_KEY = "category-prefs-v2";
 const PROXY_KEY = "anthropic-proxy-url";
@@ -418,6 +418,8 @@ function normalizeItem(item) {
     createdAt: item.createdAt ?? item.updatedAt ?? 0,
     updatedAt: item.updatedAt ?? 0,
     deleted: !!item.deleted,
+    // Z ktorého mobilu položka prišla — podľa toho sa pri nej ukazuje „videné"
+    addedBy: typeof item.addedBy === "string" ? item.addedBy : "",
   };
 }
 
@@ -613,7 +615,7 @@ function SettingsModal({ catOrder, onMoveCategory, onSave, onClose, push, onTogg
   );
 }
 
-function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCategory, flash }) {
+function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCategory, flash, seen }) {
   const style = CATEGORY_STYLES[todo.category] ?? CATEGORY_STYLES["Iné"];
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(todo.text);
@@ -689,6 +691,16 @@ function TodoRow({ todo, onToggle, onDelete, onChangeCategory, onEdit, showCateg
             ) : null}
             {todo.text}
           </span>
+
+          {/* Len pri mojich položkách: ✓ = druhý mobil ju ešte nevidel, ✓✓ = videl */}
+          {seen && (
+            <span title={seen.at
+                ? `Videné na druhom mobile ${new Date(seen.at).toLocaleString("sk-SK", { weekday: "short", hour: "2-digit", minute: "2-digit" })}`
+                : "Druhý mobil ju ešte nevidel"}
+              style={{ fontSize: "0.85rem", fontWeight: 700, letterSpacing: "-0.15em", paddingRight: "0.15em", flexShrink: 0, color: seen.at ? "#4f46e5" : "#94a3b8" }}>
+              {seen.at ? "✓✓" : "✓"}
+            </span>
+          )}
 
           {showCategory && (
             <label style={{
@@ -979,6 +991,27 @@ export default function App() {
     };
   }, [hydrated, configured, syncNow, push]);
 
+  // Keď je appka na obrazovke a sú v nej nové položky od iného mobilu, zapíš,
+  // že sú videné. Samotné upozornenie na zamknutom mobile sa nepočíta.
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === "visible");
+  useEffect(() => {
+    const onVisibility = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  useEffect(() => {
+    if (!hydrated || !pageVisible) return;
+    const me = deviceId();
+    const newest = todos.reduce((max, t) =>
+      !t.deleted && t.addedBy && t.addedBy !== me ? Math.max(max, t.createdAt) : max, 0);
+    const mine = settingsRef.current[`seen:${me}`]?.value;
+    // Čas nie menší než vznik položky — keby mal druhý mobil hodiny trochu napred.
+    if (newest > (mine ?? 0)) writeSettings({ [`seen:${me}`]: Math.max(Date.now(), newest) });
+    // Prvé spustenie bez cudzích položiek: aspoň sa ohlás, nech druhý mobil
+    // vie, že tu niekto je, a ukazuje pri svojich položkách „✓ zatiaľ nevidené".
+    else if (mine === undefined) writeSettings({ [`seen:${me}`]: 1 });
+  }, [todos, hydrated, pageVisible, writeSettings]);
+
   // Service worker dal vedieť, že prišlo upozornenie — stiahni zoznam hneď.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -1087,15 +1120,16 @@ export default function App() {
     const fresh = [];
     const taken = new Set(todosRef.current.filter(t => !t.deleted).map(t => normalize(t.text)));
     let duplicate = null;
-    entries.forEach(entry => {
+    entries.forEach((entry, index) => {
       const key = normalize(entry.text);
       if (!key) return;
       if (taken.has(key)) { duplicate ??= findActiveDuplicate(entry.text); return; }
       taken.add(key);
       const known = prefs[key] ?? history[key]?.category;
       const item = normalizeItem({
+        // createdAt klesá s poradím, aby zoznam aj upozornenie išli tak, ako bolo napísané
         id: crypto.randomUUID(), text: entry.text, qty: entry.qty,
-        category: known ?? "Iné", createdAt: now, updatedAt: now,
+        category: known ?? "Iné", createdAt: now - index * 10, updatedAt: now, addedBy: deviceId(),
       });
       // Známu položku netreba posielať AI — pokiaľ nejde o diktovanie, ktoré treba rozdeliť.
       fresh.push({ item, raw: entry.raw, known: !!prefs[key] && !voice });
@@ -1142,6 +1176,7 @@ export default function App() {
         replacement.push(normalizeItem({
           ...f.item,
           id: replacement.length ? crypto.randomUUID() : f.item.id,
+          createdAt: f.item.createdAt - replacement.length,
           text: r.text,
           qty: r.qty || (results.length === 1 ? f.item.qty : ""),
           category: prefs[key] ?? r.category,
@@ -1179,7 +1214,7 @@ export default function App() {
     const now = Date.now();
     const item = normalizeItem({
       id: crypto.randomUUID(), text: entry.text,
-      category: prefs[normalize(entry.text)] ?? entry.category ?? "Iné", createdAt: now, updatedAt: now,
+      category: prefs[normalize(entry.text)] ?? entry.category ?? "Iné", createdAt: now, updatedAt: now, addedBy: deviceId(),
     });
     setTodos(prev => sortItems([item, ...prev]));
     recordHistory([item]);
@@ -1250,7 +1285,7 @@ export default function App() {
       const fresh = [];
       let skipped = 0;
       const seen = new Set(todosRef.current.filter(t => !t.deleted).map(t => normalize(t.text)));
-      items.forEach(i => {
+      items.forEach((i, index) => {
         const text = i.text.trim();
         if (!text) return;
         const key = normalize(text);
@@ -1259,7 +1294,7 @@ export default function App() {
         const now = Date.now();
         fresh.push(normalizeItem({
           id: crypto.randomUUID(), text, qty: (i.qty ?? "").trim(),
-          category: prefs[key] ?? i.category, createdAt: now, updatedAt: now,
+          category: prefs[key] ?? i.category, createdAt: now - index * 10, updatedAt: now, addedBy: deviceId(),
         }));
       });
 
@@ -1347,6 +1382,19 @@ export default function App() {
       .sort(([, a], [, b]) => (b.count - a.count) || (b.lastAt - a.lastAt))
       .slice(0, 8).map(([, h]) => h);
   }, [history, visible, input]);
+  // „Videné": každý mobil si v nastaveniach vedie „seen:<id mobilu>" = dokedy
+  // má pozreté položky od ostatných. Moja položka je videná, keď ju pokryje
+  // aspoň jeden iný mobil.
+  const myDevice = hydrated ? deviceId() : "";
+  const seenByOthers = useMemo(() => Object.entries(pickSettings(settings, "seen:"))
+    .filter(([device, at]) => device !== myDevice && Number.isFinite(at))
+    .map(([, at]) => at), [settings, myDevice]);
+  const seenFor = (todo) => {
+    if (!myDevice || todo.addedBy !== myDevice || todo.completed || !seenByOthers.length) return null;
+    const covering = seenByOthers.filter(at => at >= todo.createdAt);
+    return { at: covering.length ? Math.min(...covering) : null };
+  };
+
   const canDictate = typeof window !== "undefined" && !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
   const remaining = visible.filter(t => !t.completed).length;
@@ -1552,7 +1600,7 @@ export default function App() {
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                     {items.map(todo => (
                       <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo}
-                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} />
+                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} seen={seenFor(todo)} />
                     ))}
                   </div>
                 </section>
@@ -1567,7 +1615,7 @@ export default function App() {
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                     {grouped.done.map(todo => (
                       <TodoRow key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={deleteTodo}
-                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} />
+                        onChangeCategory={setCategory} onEdit={editTodo} showCategory={sortByCategory} flash={flashId === todo.id} seen={seenFor(todo)} />
                     ))}
                   </div>
                 </section>
